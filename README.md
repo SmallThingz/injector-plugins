@@ -1,99 +1,29 @@
-# Injector plugin catalog
+# Injector plugins
 
-This repository prepares the default Injector catalog. The active package set
-is battery charge limit, CPU frequency control, animation speed and display
-timeout. MIUI floating windows is excluded from generated catalogs; its old
-source and ZIP remain historical artifacts and are never packaging inputs.
-Packaging requires only Python 3 and Git, with no Frida binary or native build.
+Default catalog for [Injector](https://github.com/SmallThingz/Injector). Plugins install disabled and run only after the user enables them. Root-backed plugins use existing granted root; they do not acquire it.
 
-## Pending candidate
-
-The next proposed tag is `plugins-20261122`. This is a local candidate, not a
-published release or a claim of physical qualification. Device qualification
-and publication belong to the parent maintainer.
-
-During source preparation, root `release.json` retains the previous release
-pins and root `catalog.json` retains the parent's removal of MIUI. They are not
-yet the four-plugin catalog. Pending pins and catalog are generated separately
-under `.tmp/catalog-candidate/` after source commit A exists. The parent writes
-the final root pins and catalog in commit B after physical qualification.
-Do not use the pending catalog as an app default before its release is verified.
-
-The previous release is `plugins-20261121`, source commit
-`48b04021202534b63fc58493ff71ba2291a4eac6`. Its three immutable ZIP identities
-remain recoverable from Git; local verification copies are kept under
-`.tmp/priorhistory/plugins-20261121/`. Never replace its assets or move its tag.
-The prior catalog commit is `4b1fc9e8cd4130a7ad374633712cf9584cf6d1e5`;
-this preparation does not change an app catalog pin.
-
-## Sources and qualification
-
-| Plugin | Catalog source |
+| Plugin | Device qualification |
 | --- | --- |
-| [Battery charge limit](plugins/battery-charge-limit/README.md) | Reviewed recovery fixes unchanged. Charger-connected stop/resume enforcement remains pending. |
-| [CPU frequency control](plugins/cpu-control/README.md) | Reviewed recovery fixes unchanged. Physical qualification remains pending. |
-| [Animation speed](plugins/animation-speed/README.md) | Actual device Apply and Disable restoration passed, as reported by the parent. |
-| [Display timeout](plugins/display-timeout/README.md) | Actual device Apply and Disable restoration passed, as reported by the parent. |
+| [Animation speed](plugins/animation-speed/README.md) | Apply and Disable restored all three original animation scales. |
+| [Display timeout](plugins/display-timeout/README.md) | Apply and Disable restored the original screen timeout. |
+| [CPU frequency control](plugins/cpu-control/README.md) | Physical apply/restore unverified: a transient minimum above the requested ceiling caused the pre-write guard to stop. |
+| [Battery charge limit](plugins/battery-charge-limit/README.md) | Powered charging stop/resume unverified. Controller support varies by device. |
 
-The manifests include the parent's current Apply wording. Implementation,
-helpers, tests and standalone packagers are exact copies of the reviewed
-Injector sources. Catalog-local README qualification notes and NOTICE files
-are documentation additions. Apply/restore results do not establish reboot
-reapplication or every conflict/recovery scenario. MIUI has no successful
-qualification and remains excluded from the pending/default catalog.
+The failing MIUI floating-window plugin is excluded from the current catalog. Its historical source and release remain available. Device apply/restore tests do not prove reboot reapplication or every recovery case; host fault tests cover rollback and external-change preservation separately.
 
-The new plugins declare boot reapplication and wait for previously authorized
-root. Installation remains disabled until explicitly enabled. Their copied
-`package.py` files describe the upstream standalone import packages.
-Catalog ZIPs instead use the root packager below and include README and NOTICE.
-No private artifacts, device logs or app build outputs belong in this repository.
+## Release integrity
 
-## Rebuild and verify
+The current plugin-package prerelease is `plugins-20261122`, source commit `5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7`. `release.json` pins the full commit, tag, asset names and SHA-256 hashes. Each catalog entry also identifies its source manifest. Injector checks the resolved tag, manifest and downloaded bytes before installation. These checks identify the artifacts; they do not establish reproducible compilation of arbitrary binaries.
 
-The packager uses a fixed member allowlist, sorted names, fixed timestamps and
-permissions, and uncompressed ZIP entries to avoid compressor version effects.
-It never executes plugin hooks.
+Old tags and assets are never overwritten. The preceding package release is `plugins-20261121` at source commit `48b04021202534b63fc58493ff71ba2291a4eac6`.
 
-Before source commit A, build only the active ZIPs:
+## Build and update
+
+Requires Python 3 and Git. No plugin hook runs during packaging.
 
 ```sh
 python3 package-catalog.py packages
+python3 package-catalog.py verify --require-tag
 ```
 
-Commit the reviewed source, packager, documentation and four active ZIPs as A,
-excluding root catalog/release pins. Then create a pending release pin with
-exactly `repository`, `commit`, `tag`, and `assets`: the repository is
-`https://github.com/SmallThingz/injector-plugins`, commit is A's full 40-character
-hash, tag is `plugins-20261122`, and assets maps each active ZIP name to its
-64-character SHA-256. Build and verify the separate candidate:
-
-```sh
-python3 package-catalog.py build --release .tmp/catalog-candidate/release.json --catalog .tmp/catalog-candidate/catalog.json
-python3 package-catalog.py verify --release .tmp/catalog-candidate/release.json --catalog .tmp/catalog-candidate/catalog.json
-```
-
-Both commands require all four release pins, the actual local source commit,
-source/package equality to that commit, committed ZIP hashes, and byte-identical
-source rebuilds. Verify also compares the generated catalog bytes. An existing
-local tag must resolve to A, including annotated-tag peeling. A missing tag is
-explicitly reported as pending; `--require-tag` makes it an error. These checks
-do not establish remote publication or physical behavior.
-
-## Catalog contract and parent publication
-
-Each catalog entry contains `name`, `description`, `icon`, and `release`.
-The release object requires `repository`, `commit`, `tag`, `asset`, `sha256`,
-and `manifestPath`. Consumers must resolve the remote tag to the source commit,
-fetch the manifest at that commit, verify the downloaded asset's SHA-256, and
-compare its root manifest with that pinned source manifest before import.
-
-After physical qualification, the parent must check the proposed tag and release
-are unused remotely, publish the four exact ZIPs from A under a new tag pointing
-to A, and verify the remote tag target and every downloaded asset digest.
-Never overwrite assets, force tags, or use release-upload clobber options.
-Then copy the verified candidate pins and catalog to the root, run
-`python3 package-catalog.py verify --require-tag`, and commit those two files as B.
-The immutable default catalog URL uses B's full commit hash; its pin is the
-SHA-256 of B's exact `catalog.json` bytes. Update the app pin only after verifying
-that public catalog and its release assets. Any source/package changes during
-qualification require a new source commit and regenerated pins before publication.
+Packages use fixed member allowlists, ordering, timestamps and permissions. To publish changes: commit source and deterministic packages first, choose an unused release tag, create pins referencing that source commit, and generate the catalog with `package-catalog.py build`. Publish new assets, verify the remote tag target and every downloaded hash, then commit the catalog and release pins. Never move a published tag or replace its assets.

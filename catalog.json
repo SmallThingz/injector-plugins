@@ -4,41 +4,54 @@
   "plugins": [
     {
       "name": "Battery charge limit",
-      "description": "Set charge limits on supported devices. Device testing pending.",
+      "description": "Set charge limits on supported devices. Charger-connected stop/resume enforcement pending.",
       "icon": "battery",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
-        "tag": "plugins-20261121",
+        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
+        "tag": "plugins-20261122",
         "asset": "battery-charge-limit.zip",
-        "sha256": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed",
+        "sha256": "d4a81f6aefc6ffc126a2411167b375875d5677947113138c3192aa76822d04af",
         "manifestPath": "plugins/battery-charge-limit/plugin.json"
       }
     },
     {
       "name": "CPU frequency control",
-      "description": "Control CPU governors and frequency ceilings. Device testing pending.",
+      "description": "Control CPU governors and frequency ceilings. Physical qualification pending.",
       "icon": "cpu",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
-        "tag": "plugins-20261121",
+        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
+        "tag": "plugins-20261122",
         "asset": "cpu-control.zip",
-        "sha256": "673a43d859196b132609046eba1e732a25e598bf86cbd22a0d4643d0f0a8f1d1",
+        "sha256": "ff1445a6a4f8568e1203e3adc5b27d8537c8b13e8ba4310eabfd915cb2623180",
         "manifestPath": "plugins/cpu-control/plugin.json"
       }
     },
     {
-      "name": "MIUI floating windows (experimental)",
-      "description": "Experimental. Not working on the tested HyperOS firmware.",
+      "name": "Animation speed",
+      "description": "Adjust Android animation duration. Apply changes while enabled; Disable restores previous values unless changed elsewhere.",
       "icon": "windows",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
-        "tag": "plugins-20261121",
-        "asset": "miui-floating-windows.zip",
-        "sha256": "9305f44d3083400bbcdbe0296c7b4739165dd48f3d870a6e3fa8df726da98608",
-        "manifestPath": "plugins/miui-floating-windows/plugin.json"
+        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
+        "tag": "plugins-20261122",
+        "asset": "animation-speed.zip",
+        "sha256": "8d3299fcc4a69e696cac8337da72c130eb5878d2462b6efc76c4fe8f094813da",
+        "manifestPath": "plugins/animation-speed/plugin.json"
+      }
+    },
+    {
+      "name": "Display timeout",
+      "description": "Set the idle screen timeout. Apply changes while enabled; Disable restores the previous setting unless changed elsewhere.",
+      "icon": "plugin",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
+        "tag": "plugins-20261122",
+        "asset": "display-timeout.zip",
+        "sha256": "b527851b14f04b3aff77fb135c47e052ec27ac8d46194be9b5077384713256ce",
+        "manifestPath": "plugins/display-timeout/plugin.json"
       }
     }
   ]
