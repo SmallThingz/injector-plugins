@@ -2,7 +2,7 @@
   "id": "cpu-control",
   "name": "CPU frequency control",
   "version": "0.1",
-  "description": "Choose a governor and frequency ceiling for each amethyst CPU group. Apply changes while enabled. Disable restores settings the plugin still controls.",
+  "description": "For amethyst on HyperOS OS3.0.303.0.WOPINXM. Current system frequency limits can prevent applying the efficiency-core ceiling.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {
@@ -11,6 +11,7 @@
     "disable": "hook.sh"
   },
   "ui": {
+    "layout": "accordion",
     "groups": [
       {
         "id": "policy0",
@@ -60,14 +61,19 @@
         ]
       },
       {
-        "id": "policy0_percent",
+        "id": "policy0_max_khz",
         "group": "policy0",
         "label": "Maximum frequency",
-        "type": "slider",
-        "min": 33,
-        "max": 100,
-        "step": 1,
-        "default": 100
+        "type": "choice",
+        "default": "system",
+        "options": [
+          {"value": "system", "label": "System setting"},
+          {"value": "1228800", "label": "1228.8 MHz"},
+          {"value": "1344000", "label": "1344 MHz"},
+          {"value": "1497600", "label": "1497.6 MHz"},
+          {"value": "1593600", "label": "1593.6 MHz"},
+          {"value": "1708800", "label": "1708.8 MHz"}
+        ]
       },
       {
         "id": "policy4_governor",
@@ -103,16 +109,6 @@
         ]
       },
       {
-        "id": "policy4_percent",
-        "group": "policy4",
-        "label": "Maximum frequency",
-        "type": "slider",
-        "min": 31,
-        "max": 100,
-        "step": 1,
-        "default": 100
-      },
-      {
         "id": "policy7_governor",
         "group": "policy7",
         "label": "Frequency governor",
@@ -144,27 +140,10 @@
             "label": "schedutil"
           }
         ]
-      },
-      {
-        "id": "policy7_percent",
-        "group": "policy7",
-        "label": "Maximum frequency",
-        "type": "slider",
-        "min": 34,
-        "max": 100,
-        "step": 1,
-        "default": 100
       }
     ],
     "presentation": {
-      "icon": "cpu",
-      "headline": "{policy0_percent}% · {policy4_percent}% · {policy7_percent}%",
-      "description": "Frequency ceilings for efficiency, performance and prime cores.",
-      "sliderUnits": {
-        "policy0_percent": "%",
-        "policy4_percent": "%",
-        "policy7_percent": "%"
-      }
+      "icon": "cpu"
     }
   }
 }

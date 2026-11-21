@@ -2,7 +2,7 @@
   "id": "battery-charge-limit",
   "name": "Battery charge limit",
   "version": "0.1",
-  "description": "Set the battery charge limit. Resume applies on devices with a writable start threshold. Apply changes while enabled. Disable restores the previous thresholds.",
+  "description": "Configure a charge window on supported devices. Charging enforcement depends on the battery driver.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {
@@ -10,39 +10,54 @@
     "run": "hook.sh",
     "disable": "hook.sh"
   },
+  "session": {
+    "protocol": "stdin-lease-v1",
+    "hook": "hook.sh"
+  },
   "ui": {
+    "layout": "accordion",
     "groups": [
       {
         "id": "charging",
-        "label": "Charging thresholds"
+        "label": "Charge window"
       }
     ],
     "inputs": [
       {
         "id": "stop_percent",
-        "label": "Stop charging at",
+        "label": "Stop at or above",
         "group": "charging",
         "type": "slider",
-        "min": 50,
+        "min": 0,
         "max": 100,
         "step": 1,
         "default": 80
       },
       {
         "id": "resume_percent",
-        "label": "Resume charging below",
+        "label": "Resume at or below",
         "group": "charging",
         "type": "slider",
-        "min": 45,
-        "max": 99,
+        "min": 0,
+        "max": 100,
         "step": 1,
         "default": 75
+      }
+    ],
+    "ranges": [
+      {
+        "id": "charge_window",
+        "label": "Charge window",
+        "lower": "resume_percent",
+        "upper": "stop_percent",
+        "unit": "%",
+        "minGap": 1
       }
     ],
     "presentation": {
       "icon": "battery",
       "headline": "{resume_percent}–{stop_percent}%",
-      "description": "Your charging window. Disable restores the previous thresholds.",
+      "description": "Charging enforcement depends on the battery driver.",
       "sliderUnits": {
         "stop_percent": "%",
         "resume_percent": "%"

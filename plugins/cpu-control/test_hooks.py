@@ -79,24 +79,54 @@ class CpuControl(unittest.TestCase):
         self.assertEqual(manifest['runtime'], 'shell')
         self.assertEqual(set(manifest['hooks'].values()), {'hook.sh'})
         self.assertEqual(set(manifest['hooks']), {'enable', 'disable', 'run'})
+        self.assertEqual(manifest['ui']['layout'], 'accordion')
+        self.assertNotIn('headline', manifest['ui']['presentation'])
+        self.assertNotIn('triggers', manifest)
         groups = {group['id'] for group in manifest['ui']['groups']}
         self.assertEqual(groups, set(POLICIES))
-        inputs = manifest['ui']['inputs']
-        self.assertEqual(len(inputs), len(groups) * 2)
-        for item in inputs:
-            self.assertIn(item['group'], groups)
+        inputs = {item['id']: item for item in manifest['ui']['inputs']}
+        self.assertEqual(set(inputs), {'policy0_max_khz', *(f'{p}_governor' for p in groups)})
+        self.assertEqual(inputs['policy0_max_khz']['group'], 'policy0')
+        ceiling_options = inputs['policy0_max_khz']['options']
+        self.assertEqual(ceiling_options, [
+            {'value': 'system', 'label': 'System setting'},
+            {'value': '1228800', 'label': '1228.8 MHz'},
+            {'value': '1344000', 'label': '1344 MHz'},
+            {'value': '1497600', 'label': '1497.6 MHz'},
+            {'value': '1593600', 'label': '1593.6 MHz'},
+            {'value': '1708800', 'label': '1708.8 MHz'},
+        ])
+        for policy in groups:
+            governor = inputs[policy + '_governor']
+            self.assertEqual(governor['group'], policy)
+            self.assertEqual([choice['value'] for choice in governor['options']], ['system', *GOVERNORS.split()])
+        for item in inputs.values():
             self.assertIn('INJECTOR_INPUT_' + item['id'], self.hook.read_text())
-            if item['type'] == 'choice':
-                self.assertEqual(item['default'], 'system')
-                self.assertEqual({o['value'] for o in item['options']}, {'system', *GOVERNORS.split()})
-            else:
-                self.assertEqual((item['type'], item['default'], item['max']), ('slider', 100, 100))
-                _, low, maximum, _, table = POLICIES[item['group']]
-                first = min(f for f in map(int, table.split()) if f >= low)
-                self.assertEqual(item['min'], (100 * first + maximum - 1) // maximum)
-        self.call('enable')
+            self.assertEqual((item['type'], item['default']), ('choice', 'system'))
+
+        defaults = {identifier: item['default'] for identifier, item in inputs.items()}
+        for policy in ('policy4', 'policy7'):
+            (self.sysfs / policy / 'scaling_max_freq').chmod(0o444)
+        self.call('enable', **defaults)
         self.assertEqual(self.active.read_text(), '')
+
+        self.put('policy0', 'scaling_min_freq', 1344000)
+        self.call('run', ok=False, **(defaults | {'policy0_max_khz': '1228800'}))
+        self.assertEqual(self.active.read_text(), '')
+        self.assertEqual(self.value('policy0', 'scaling_max_freq'), '1804800')
+
+        self.put('policy0', 'scaling_min_freq', 1228800)
+        for option in ceiling_options[1:]:
+            ceiling = option['value']
+            self.call('run', **(defaults | {'policy0_max_khz': ceiling}))
+            self.assertEqual(self.active.read_text(), f'policy0 scaling_max_freq 1804800 {ceiling}\n')
+            self.assertEqual(self.value('policy0', 'scaling_max_freq'), ceiling)
+
         self.call('disable')
+        for policy, (_, _, ceiling, _, _) in POLICIES.items():
+            self.assertEqual(self.value(policy, 'scaling_max_freq'), str(ceiling))
+            self.assertEqual(self.value(policy, 'scaling_governor'), 'walt')
+        self.assertEqual(self.active.read_text(), '')
 
     def test_apply_edit_repeat_restore(self):
         settings = dict(policy4_governor='schedutil', policy4_percent=90, policy7_percent=90)
@@ -133,6 +163,120 @@ class CpuControl(unittest.TestCase):
         self.call('enable', ok=False, policy7_percent=90)
         self.call('enable', policy7_governor='powersave')
         self.call('disable')
+
+    def test_native_ceiling_uses_exact_driver_step_and_restores_original(self):
+        self.call('enable', policy4_max_khz=1824000)
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '1824000')
+        self.call('run', policy4_max_khz=1920000)
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '1920000')
+        self.call('run', policy4_max_khz='system')
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '2073600')
+        self.assertEqual(self.active.read_text(), '')
+
+    def test_probe_filters_frequencies_by_live_limits_without_creating_state(self):
+        self.put('policy0', 'scaling_max_freq', 1344000)
+        self.put('policy4', 'scaling_min_freq', 1708800)
+        self.put('policy7', 'related_cpus', '6 7')
+        self.mock('cat', """if [ "$1" = "$SYSFS/policy4/scaling_min_freq" ]; then
+            if [ -e "$SYSFS/minimum-read" ]; then
+                echo 1920000
+                exit
+            fi
+            : > "$SYSFS/minimum-read"
+        fi
+        exec /bin/cat "$@" """)
+        snapshot = json.loads(self.call('probe'))
+        self.assertEqual(snapshot['version'], 1)
+        self.assertEqual([p['id'] for p in snapshot['policies']], ['policy0', 'policy4'])
+        policy0, policy4 = snapshot['policies']
+        self.assertEqual(policy0['maxKHz'],
+                         [595200, 787200, 902400, 1017600, 1113600, 1228800, 1344000])
+        self.assertEqual(policy0['minKHz'], 595200)
+        self.assertEqual(policy0['currentMaxKHz'], 1344000)
+        self.assertEqual(policy0['governors'], GOVERNORS.split())
+        self.assertEqual(policy4['maxKHz'], [1920000, 2016000, 2073600])
+        self.assertEqual(list(self.state.iterdir()), [])
+
+    def test_probe_reads_original_ceiling_and_hides_choices_on_conflict(self):
+        self.call('enable', policy4_max_khz=1824000, policy4_governor='powersave')
+        saved = self.active.read_bytes()
+        policy4 = json.loads(self.call('probe'))['policies'][1]
+        self.assertEqual(policy4['currentMaxKHz'], 1824000)
+        self.assertEqual(policy4['maxKHz'][-1], 2073600)
+        self.put('policy4', 'scaling_max_freq', 1708800)
+        self.put('policy4', 'scaling_governor', 'conservative')
+        policy4 = json.loads(self.call('probe'))['policies'][1]
+        self.assertEqual(policy4['currentMaxKHz'], 1708800)
+        self.assertEqual(policy4['maxKHz'], [])
+        self.assertEqual(policy4['governors'], [])
+        self.assertEqual(self.active.read_bytes(), saved)
+        self.assertEqual(self.value('policy4', 'scaling_governor'), 'conservative')
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '1708800')
+
+    def test_probe_disables_unreadable_or_read_only_controls_independently(self):
+        (self.sysfs / 'policy4/scaling_max_freq').chmod(0o444)
+        (self.sysfs / 'policy7/scaling_min_freq').unlink()
+        (self.sysfs / 'policy7/scaling_governor').chmod(0o444)
+        self.put('policy0', 'scaling_available_frequencies', '633600 invalid')
+        policy0, policy4, policy7 = json.loads(self.call('probe'))['policies']
+        self.assertEqual(policy0['maxKHz'], [])
+        self.assertEqual(policy4['maxKHz'], [])
+        self.assertEqual(policy4['governors'], GOVERNORS.split())
+        self.assertEqual(policy7['governors'], [])
+        self.assertIsNone(policy7['minKHz'])
+        self.assertIsNone(policy7['currentMaxKHz'])
+        (self.journal / 'pending').mkdir(parents=True)
+        self.assertIn('recovery is pending', self.call('probe', ok=False))
+        self.assertTrue((self.journal / 'pending').is_dir())
+        self.assertFalse((self.journal / 'lock').exists())
+
+    def test_native_ceiling_rejects_unlisted_steps_and_live_bounds(self):
+        for ceiling in ('1800000', '2208000', '1804.8', '01824000'):
+            with self.subTest(ceiling=ceiling):
+                self.call('enable', ok=False, policy0_governor='powersave', policy4_max_khz=ceiling)
+        self.put('policy4', 'scaling_min_freq', 1708800)
+        log = self.call('enable', ok=False, policy4_max_khz=1612800)
+        self.assertIn('1708800 kHz', log)
+        self.assertEqual(self.value('policy0', 'scaling_governor'), 'walt')
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '2073600')
+        self.assertEqual(self.active.read_text(), '')
+
+    def test_read_only_attribute_blocks_entire_apply(self):
+        (self.sysfs / 'policy4/scaling_max_freq').chmod(0o444)
+        log = self.call('enable', ok=False, policy0_governor='powersave', policy4_percent=90)
+        self.assertIn('read-only', log)
+        self.assertEqual(self.value('policy0', 'scaling_governor'), 'walt')
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '2073600')
+        self.assertEqual(self.active.read_text(), '')
+
+    def test_default_settings_report_unsupported_device(self):
+        for policy, cpus in [('policy0', '0 1'), ('policy4', '4 5'), ('policy7', '6 7')]:
+            self.put(policy, 'related_cpus', cpus)
+        self.assertIn('No usable CPU frequency controls', self.call('enable', ok=False))
+        self.assertEqual(self.active.read_text(), '')
+
+    def test_policy_minimum_rise_after_plan_rolls_back_earlier_write(self):
+        self.mock('cat', """if [ "$1" = "$SYSFS/policy4/scaling_max_freq" ] &&
+                [ -f "$JOURNAL/pending/attempt.1" ]; then
+            echo 1920000 > "$SYSFS/policy4/scaling_min_freq"
+        fi
+        exec /bin/cat "$@" """)
+        self.call('enable', ok=False, policy0_governor='powersave', policy4_max_khz=1824000)
+        self.assertEqual(self.value('policy0', 'scaling_governor'), 'walt')
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '2073600')
+        self.assertEqual(self.value('policy4', 'scaling_min_freq'), '1920000')
+        self.assertEqual(self.active.read_text(), '')
+
+    def test_frequency_step_disappearing_after_plan_blocks_write(self):
+        self.mock('cat', """if [ "$1" = "$SYSFS/policy4/scaling_max_freq" ] &&
+                [ -f "$JOURNAL/pending/attempt.1" ]; then
+            echo '633600 1612800 2073600' > "$SYSFS/policy4/scaling_available_frequencies"
+        fi
+        exec /bin/cat "$@" """)
+        self.call('enable', ok=False, policy0_governor='powersave', policy4_max_khz=1824000)
+        self.assertEqual(self.value('policy0', 'scaling_governor'), 'walt')
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '2073600')
+        self.assertEqual(self.active.read_text(), '')
 
     def test_uses_live_min_and_unsorted_driver_table(self):
         self.put('policy7', 'scaling_available_frequencies', '2208000 1497600 633600 1600000')

@@ -1,0 +1,5 @@
+{
+  "action": "keep-screen-on",
+  "operation": "acquire",
+  "durationInput": "duration"
+}

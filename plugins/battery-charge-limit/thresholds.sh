@@ -73,9 +73,14 @@ validate_pair() {
 
 save_state() {
     # Replace one complete journal record before attempting each sysfs write.
-    printf '%s\n' 1 "$firmware" "$supply" "$layout" "$phase" \
-        "$original_start" "$original_end" "$confirmed_start" "$confirmed_end" \
-        "$pending_node" "$pending_value" > "$journal.new" && mv -f "$journal.new" "$journal"
+    version=1
+    if [ -n "$session_owner" ]; then version=2; fi
+    {
+        printf '%s\n' "$version" "$firmware" "$supply" "$layout" "$phase" \
+            "$original_start" "$original_end" "$confirmed_start" "$confirmed_end" \
+            "$pending_node" "$pending_value" &&
+            { [ "$version" = 1 ] || printf '%s\n' "$session_owner" "$session_launch"; }
+    } > "$journal.new" && mv -f "$journal.new" "$journal"
 }
 
 load_state() {
@@ -83,9 +88,18 @@ load_state() {
         IFS= read -r version && IFS= read -r saved_firmware && IFS= read -r saved_supply &&
             IFS= read -r saved_layout && IFS= read -r phase && IFS= read -r original_start &&
             IFS= read -r original_end && IFS= read -r confirmed_start && IFS= read -r confirmed_end &&
-            IFS= read -r pending_node && IFS= read -r pending_value
+            IFS= read -r pending_node && IFS= read -r pending_value ||
+            fail 'Charge limit state is incomplete. Saved state was retained.'
+        if [ "$version" = 2 ]; then
+            IFS= read -r session_owner && valid_session_id "$session_owner" || fail 'Invalid native charge session identity.'
+            IFS= read -r session_launch || session_launch=
+            [ -z "$session_launch" ] || valid_session_id "$session_launch" || fail 'Invalid native charge session launch.'
+        else
+            session_owner=
+            session_launch=
+        fi
     } < "$journal" || fail 'Charge limit state is incomplete. Saved state was retained.'
-    [ "$version" = 1 ] && [ "$saved_firmware" = "$firmware" ] && [ "$saved_supply" = "$supply" ] &&
+    { [ "$version" = 1 ] || [ "$version" = 2 ]; } && [ "$saved_firmware" = "$firmware" ] && [ "$saved_supply" = "$supply" ] &&
         [ "$saved_layout" = "$layout" ] || fail 'The firmware or charge controller changed. Saved state was retained.'
     case "$phase" in preparing|active|stopping) ;; *) fail 'Invalid charge limit state.' ;; esac
     validate_pair "$original_start" "$original_end" && validate_pair "$confirmed_start" "$confirmed_end" ||
@@ -105,13 +119,21 @@ matches_confirmed() {
     [ "$actual_start" = "$confirmed_start" ] && [ "$actual_end" = "$confirmed_end" ]
 }
 
+native_conflict() {
+    if [ "$event" = tick ] || [ "$event" = cleanup ] || [ "$event" = recover ]; then
+        printf '%s\n' "$*" >&2
+        exit 3
+    fi
+    fail "$*"
+}
+
 report_conflict() {
     printf 'Last verified start/stop: %s/%s. Current start/stop: %s/%s.\n' \
         "$confirmed_start" "$confirmed_end" "$actual_start" "$actual_end" >&2
     if [ "$pending_node" != - ]; then
-        fail 'A previous threshold write has an unknown outcome. Saved state was retained.'
+        native_conflict 'A previous threshold write has an unknown outcome. Saved state was retained.'
     fi
-    fail 'The thresholds changed externally. Saved state was retained.'
+    native_conflict 'The thresholds changed externally. Saved state was retained.'
 }
 
 check_confirmed() {
@@ -152,11 +174,20 @@ change_threshold() {
         clear_pending
         report_conflict
     fi
+    if ! owner_writable "$node"; then
+        clear_pending
+        printf 'The native charge %s threshold became read-only.\n' "$field" >&2
+        return 1
+    fi
+    if [ "$event" = tick ] && ! lease_current; then
+        clear_pending
+        exit 4
+    fi
     written=false
     if write_threshold "$node" "$requested"; then
         written=true
     fi
-    read_pair || fail 'Threshold write readback is unavailable. Saved state was retained.'
+    read_pair || native_conflict 'Threshold write readback is unavailable. Saved state was retained.'
     if [ "$written" = true ] && [ "$actual_start/$actual_end" = "$next_start/$next_end" ]; then
         confirmed_start=$next_start
         confirmed_end=$next_end
@@ -169,7 +200,7 @@ change_threshold() {
         return 1
     fi
     printf 'Requested %s=%s. Readback start/stop: %s/%s.\n' "$field" "$requested" "$actual_start" "$actual_end" >&2
-    fail 'The threshold write could not be verified. Saved state was retained.'
+    native_conflict 'The threshold write could not be verified. Saved state was retained.'
 }
 
 transition() {
@@ -201,20 +232,55 @@ charge_limit() {
     devices_root=$3
     state_dir=$4
     firmware=$5
+    expected_session=${6-}
+    expected_launch=${7-}
+    session_owner=$expected_session
+    session_launch=$expected_launch
     journal="$state_dir/threshold-state"
-    case "$event" in enable|run|disable) ;; *) fail 'Unsupported hook event.' ;; esac
+    restored_journal="$state_dir/threshold-restored"
+    verified_receipt=false
+    case "$event" in enable|run|disable|start|tick|cleanup|recover|abort-start) ;; *) fail 'Unsupported hook event.' ;; esac
     exec 9> "$state_dir/threshold-lock" || fail 'Cannot open the charge limit lock.'
     flock -n 9 9>&9 || fail 'Charge limit lock unavailable or busy.'
+    [ ! -e "$state_dir/input-suspend-state" ] && [ ! -L "$state_dir/input-suspend-state" ] ||
+        fail 'An input-suspend session must be restored first.'
+    [ ! -L "$journal" ] || native_conflict 'Invalid native threshold journal.'
     if [ "$event" = disable ] && [ ! -e "$journal" ]; then
         printf '%s\n' 'No saved charge limit to restore.'
         return 0
+    fi
+    if [ "$event" = recover ] && [ ! -e "$journal" ] && [ ! -L "$journal" ]; then
+        journal=$restored_journal
+        [ -f "$journal" ] && [ ! -L "$journal" ] || native_conflict 'No matching native threshold restoration evidence.'
+        verified_receipt=true
     fi
     [ -n "$firmware" ] || fail 'The firmware identity is unavailable.'
     discover_controller
 
     if [ -e "$journal" ]; then
+        [ "$event" != start ] || fail 'Disable must resolve the existing native threshold session.'
         load_state
-        if [ "$event" = disable ] && [ "$phase" != stopping ]; then
+        if [ "$event" = abort-start ]; then
+            [ "$session_owner/$session_launch" = "$expected_session/$expected_launch" ] || exit 5
+            event=cleanup
+        fi
+        if [ -n "$expected_session" ] && [ "$session_owner" != "$expected_session" ]; then
+            native_conflict 'Native charge session ownership changed.'
+        fi
+        if [ -n "$expected_launch" ] && [ "$session_launch" != "$expected_launch" ]; then
+            native_conflict 'Native charge launch ownership changed.'
+        fi
+        if [ "$verified_receipt" = true ]; then
+            [ "$phase" = stopping ] && [ "$pending_node" = - ] &&
+                [ "$confirmed_start/$confirmed_end" = "$original_start/$original_end" ] ||
+                native_conflict 'Invalid native threshold restoration evidence.'
+            check_confirmed
+            return 0
+        fi
+        if [ -n "$session_owner" ] && [ "$event" != disable ] && [ -z "$expected_session" ]; then
+            fail 'The running charge session must be stopped before applying changes.'
+        fi
+        if { [ "$event" = disable ] || [ "$event" = cleanup ] || [ "$event" = recover ]; } && [ "$phase" != stopping ]; then
             phase=stopping
             save_state || fail 'Unable to record the restore operation.'
         fi
@@ -224,6 +290,10 @@ charge_limit() {
             clear_pending
         fi
     else
+        [ "$event" != abort-start ] || exit 5
+        if [ "$event" = tick ] || [ "$event" = cleanup ]; then
+            native_conflict 'The native charge session journal disappeared.'
+        fi
         read_pair && validate_pair "$actual_start" "$actual_end" || fail 'The battery reports invalid native thresholds.'
         original_start=$actual_start
         original_end=$actual_end
@@ -239,33 +309,50 @@ charge_limit() {
         fi
     fi
 
-    if [ "$event" = disable ]; then
+    if [ "$event" = disable ] || [ "$event" = cleanup ] || [ "$event" = recover ]; then
         transition "$original_start" "$original_end" || fail 'The driver rejected a saved threshold. Saved state was retained.'
         check_confirmed
-        rm "$journal" || fail 'Original thresholds are verified, but the saved state could not be removed.'
+        if [ -n "$session_owner" ]; then
+            mv -f "$journal" "$restored_journal" ||
+                fail 'Original thresholds are verified, but the restoration receipt could not be saved.'
+        else
+            rm "$journal" || fail 'Original thresholds are verified, but the saved state could not be removed.'
+        fi
         printf 'Original native thresholds restored.\n'
         describe_thresholds
         return 0
     fi
 
     [ "$phase" != stopping ] || fail 'Disable must finish restoring the previous thresholds first.'
+    if [ "$event" = tick ] && [ "$phase" = active ]; then return 0; fi
     if [ "$event" = run ] && [ "$phase" != active ]; then
         fail 'Enable or Disable must resolve the incomplete setup first.'
     fi
     stop=${INJECTOR_INPUT_stop_percent-80}
-    is_percent "$stop" && [ "$stop" -ge 50 ] || fail 'Stop must be a whole number from 50 to 100.'
+    is_percent "$stop" || fail 'Stop must be a whole number from 0 to 100.'
     resume=$confirmed_start
     case "$layout" in
         paired)
             resume=${INJECTOR_INPUT_resume_percent-75}
-            is_percent "$resume" && [ "$resume" -ge 45 ] && [ "$resume" -le 99 ] ||
-                fail 'Resume must be a whole number from 45 to 99.'
+            is_percent "$resume" || fail 'Resume must be a whole number from 0 to 100.'
             [ "$resume" -lt "$stop" ] || fail 'Choose a resume threshold below the stop threshold.'
             ;;
         fixed)
+            if [ "${INJECTOR_INPUT_resume_percent+x}" ] && [ "$INJECTOR_INPUT_resume_percent" != "$resume" ]; then
+                fail "This device fixes the charge start threshold at $resume%."
+            fi
             [ "$resume" -lt "$stop" ] || fail "Choose a stop threshold above the device's fixed start threshold."
             ;;
+        end)
+            [ -z "${INJECTOR_INPUT_resume_percent+x}" ] ||
+                fail 'This device exposes only a stop threshold. A charge window requires a native start threshold.'
+            ;;
     esac
+
+    if [ "$event" = start ]; then
+        save_state || fail 'Unable to save the charge session baseline.'
+        return 0
+    fi
 
     before_start=$confirmed_start
     before_end=$confirmed_end
@@ -274,7 +361,7 @@ charge_limit() {
     if ! transition "$resume" "$stop"; then
         transition "$before_start" "$before_end" || fail 'Unable to roll back the rejected change. Saved state was retained.'
         check_confirmed
-        if [ "$before_phase" = preparing ] && [ "$confirmed_start/$confirmed_end" = "$original_start/$original_end" ]; then
+        if [ -z "$session_owner" ] && [ "$before_phase" = preparing ] && [ "$confirmed_start/$confirmed_end" = "$original_start/$original_end" ]; then
             rm "$journal" || fail 'Original thresholds are verified, but the saved state could not be removed.'
         fi
         fail 'The requested thresholds were rejected. The previous thresholds are verified.'
@@ -283,4 +370,5 @@ charge_limit() {
     phase=active
     save_state || fail 'Thresholds were verified, but the active receipt could not be saved.'
     describe_thresholds
+    printf '%s\n' 'Threshold readback verified. Charging enforcement is unverified.'
 }

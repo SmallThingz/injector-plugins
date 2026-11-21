@@ -1,0 +1,54 @@
+{
+  "id": "caffeine",
+  "name": "Caffeine",
+  "version": "0.1",
+  "author": "SmallThingz",
+  "homepage": "https://github.com/SmallThingz/Injector",
+  "description": "Keep the screen awake across apps. Locking ends the session.",
+  "backend": "app",
+  "runtime": "native",
+  "hooks": {
+    "enable": "acquire.json",
+    "run": "acquire.json",
+    "disable": "release.json"
+  },
+  "triggers": {
+    "boot": false
+  },
+  "ui": {
+    "presentation": {
+      "icon": "plugin",
+      "headline": "{duration}"
+    },
+    "inputs": [
+      {
+        "id": "duration",
+        "label": "Duration",
+        "type": "choice",
+        "default": "1800",
+        "options": [
+          {
+            "value": "300",
+            "label": "5 min"
+          },
+          {
+            "value": "900",
+            "label": "15 min"
+          },
+          {
+            "value": "1800",
+            "label": "30 min"
+          },
+          {
+            "value": "3600",
+            "label": "1 hour"
+          },
+          {
+            "value": "indefinite",
+            "label": "Indefinite"
+          }
+        ]
+      }
+    ]
+  }
+}
