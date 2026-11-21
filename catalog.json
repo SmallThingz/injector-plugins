@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Battery charge limit",
+    "description": "Set charge limits on supported devices. Device testing pending.",
+    "manifestUrl": "plugins/battery-charge-limit/plugin.json",
+    "packageUrl": "packages/battery-charge-limit.zip",
+    "sha256": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed"
+  },
+  {
+    "name": "CPU frequency control",
+    "description": "Control CPU governors and frequency ceilings. Device testing pending.",
+    "manifestUrl": "plugins/cpu-control/plugin.json",
+    "packageUrl": "packages/cpu-control.zip",
+    "sha256": "673a43d859196b132609046eba1e732a25e598bf86cbd22a0d4643d0f0a8f1d1"
+  },
+  {
+    "name": "MIUI floating windows (experimental)",
+    "description": "Experimental. Not working on the tested HyperOS firmware.",
+    "manifestUrl": "plugins/miui-floating-windows/plugin.json",
+    "packageUrl": "packages/miui-floating-windows.zip",
+    "sha256": "9305f44d3083400bbcdbe0296c7b4739165dd48f3d870a6e3fa8df726da98608"
+  }
+]

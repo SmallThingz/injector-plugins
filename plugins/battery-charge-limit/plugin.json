@@ -1,0 +1,52 @@
+{
+  "id": "battery-charge-limit",
+  "name": "Battery charge limit",
+  "version": "0.1",
+  "description": "Set the battery charge limit. Resume applies on devices with a writable start threshold. Save, then Run to apply changes while enabled. Disable restores the previous thresholds.",
+  "backend": "root",
+  "runtime": "shell",
+  "hooks": {
+    "enable": "hook.sh",
+    "run": "hook.sh",
+    "disable": "hook.sh"
+  },
+  "ui": {
+    "groups": [
+      {
+        "id": "charging",
+        "label": "Charging thresholds"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "stop_percent",
+        "label": "Stop charging at",
+        "group": "charging",
+        "type": "slider",
+        "min": 50,
+        "max": 100,
+        "step": 1,
+        "default": 80
+      },
+      {
+        "id": "resume_percent",
+        "label": "Resume charging below",
+        "group": "charging",
+        "type": "slider",
+        "min": 45,
+        "max": 99,
+        "step": 1,
+        "default": 75
+      }
+    ],
+    "presentation": {
+      "icon": "battery",
+      "headline": "{resume_percent}–{stop_percent}%",
+      "description": "Your charging window. Disable restores the previous thresholds.",
+      "sliderUnits": {
+        "stop_percent": "%",
+        "resume_percent": "%"
+      }
+    }
+  }
+}

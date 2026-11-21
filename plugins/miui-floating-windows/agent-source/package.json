@@ -1,0 +1,13 @@
+{
+  "name": "amethyst-live-freeform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build agent.js --target=browser --format=iife --minify --outfile=dist/agent.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "frida-java-bridge": "7.1.0"
+  }
+}

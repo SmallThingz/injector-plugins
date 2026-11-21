@@ -1,0 +1,170 @@
+{
+  "id": "cpu-control",
+  "name": "CPU frequency control",
+  "version": "0.1",
+  "description": "Choose a governor and frequency ceiling for each amethyst CPU group. Save and run to apply. Disable restores settings the plugin still controls.",
+  "backend": "root",
+  "runtime": "shell",
+  "hooks": {
+    "enable": "hook.sh",
+    "run": "hook.sh",
+    "disable": "hook.sh"
+  },
+  "ui": {
+    "groups": [
+      {
+        "id": "policy0",
+        "label": "Efficiency cores · CPUs 0–3"
+      },
+      {
+        "id": "policy4",
+        "label": "Performance cores · CPUs 4–6"
+      },
+      {
+        "id": "policy7",
+        "label": "Prime core · CPU 7"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "policy0_governor",
+        "group": "policy0",
+        "label": "Frequency governor",
+        "type": "choice",
+        "default": "system",
+        "options": [
+          {
+            "value": "system",
+            "label": "System setting"
+          },
+          {
+            "value": "walt",
+            "label": "walt"
+          },
+          {
+            "value": "conservative",
+            "label": "conservative"
+          },
+          {
+            "value": "powersave",
+            "label": "powersave"
+          },
+          {
+            "value": "performance",
+            "label": "performance"
+          },
+          {
+            "value": "schedutil",
+            "label": "schedutil"
+          }
+        ]
+      },
+      {
+        "id": "policy0_percent",
+        "group": "policy0",
+        "label": "Maximum frequency",
+        "type": "slider",
+        "min": 33,
+        "max": 100,
+        "step": 1,
+        "default": 100
+      },
+      {
+        "id": "policy4_governor",
+        "group": "policy4",
+        "label": "Frequency governor",
+        "type": "choice",
+        "default": "system",
+        "options": [
+          {
+            "value": "system",
+            "label": "System setting"
+          },
+          {
+            "value": "walt",
+            "label": "walt"
+          },
+          {
+            "value": "conservative",
+            "label": "conservative"
+          },
+          {
+            "value": "powersave",
+            "label": "powersave"
+          },
+          {
+            "value": "performance",
+            "label": "performance"
+          },
+          {
+            "value": "schedutil",
+            "label": "schedutil"
+          }
+        ]
+      },
+      {
+        "id": "policy4_percent",
+        "group": "policy4",
+        "label": "Maximum frequency",
+        "type": "slider",
+        "min": 31,
+        "max": 100,
+        "step": 1,
+        "default": 100
+      },
+      {
+        "id": "policy7_governor",
+        "group": "policy7",
+        "label": "Frequency governor",
+        "type": "choice",
+        "default": "system",
+        "options": [
+          {
+            "value": "system",
+            "label": "System setting"
+          },
+          {
+            "value": "walt",
+            "label": "walt"
+          },
+          {
+            "value": "conservative",
+            "label": "conservative"
+          },
+          {
+            "value": "powersave",
+            "label": "powersave"
+          },
+          {
+            "value": "performance",
+            "label": "performance"
+          },
+          {
+            "value": "schedutil",
+            "label": "schedutil"
+          }
+        ]
+      },
+      {
+        "id": "policy7_percent",
+        "group": "policy7",
+        "label": "Maximum frequency",
+        "type": "slider",
+        "min": 34,
+        "max": 100,
+        "step": 1,
+        "default": 100
+      }
+    ],
+    "presentation": {
+      "icon": "cpu",
+      "headline": "{policy0_percent}% · {policy4_percent}% · {policy7_percent}%",
+      "description": "Frequency ceilings for efficiency, performance and prime cores.",
+      "sliderUnits": {
+        "policy0_percent": "%",
+        "policy4_percent": "%",
+        "policy7_percent": "%"
+      }
+    }
+  }
+}

@@ -1,0 +1,419 @@
+diff --git a/inject/inject.vala b/inject/inject.vala
+index f38e13b..e9ae0a7 100644
+--- a/inject/inject.vala
++++ b/inject/inject.vala
+@@ -204,6 +204,7 @@ namespace Frida.Inject {
+ 		private Cancellable stop_cancellable;
+ 
+ 		private int exit_code;
++		private bool ready;
+ 		private MainLoop loop;
+ 
+ 		public Application (string? device_id, string? spawn_file, int target_pid, string? target_name,
+@@ -239,6 +240,11 @@ namespace Frida.Inject {
+ 
+ 		private async void start () {
+ 			device_manager = new DeviceManager ();
++			Timeout.add_seconds (18, () => {
++				if (!ready)
++					io_cancellable.cancel ();
++				return Source.REMOVE;
++			});
+ 
+ 			try {
+ 				Device device;
+@@ -257,13 +263,30 @@ namespace Frida.Inject {
+ 					pid = (uint) target_pid;
+ 				}
+ 
+-				var session = yield device.attach (pid, session_options, io_cancellable);
++				Session session;
++				try {
++					session = yield device.attach (pid, session_options, io_cancellable);
++				} catch (GLib.Error e) {
++					printerr ("MIUI_NO_AGENT\n");
++					throw e;
++				}
+ 				session.detached.connect (on_detached);
+ 
+ 				var r = new ScriptRunner (session, script_path, script_source, script_runtime, parameters,
+ 					enable_development, io_cancellable);
+-				yield r.start ();
+ 				script_runner = r;
++				yield r.start ();
++				ready = true;
++				printerr ("MIUI_READY\n");
++				string? stop_path = GLib.Environment.get_variable ("MIUI_STOP_FILE");
++				if (stop_path != null) {
++					Timeout.add (200, () => {
++						if (!FileUtils.test (stop_path, FileTest.EXISTS))
++							return Source.CONTINUE;
++						shutdown ();
++						return Source.REMOVE;
++					});
++				}
+ 
+ 				if (interactive)
+ 					watch_stdin ();
+@@ -291,10 +314,13 @@ namespace Frida.Inject {
+ 
+ 		private async void stop () {
+ 			if (stop_cancellable != null) {
+-				stop_cancellable.cancel ();
+ 				return;
+ 			}
+ 			stop_cancellable = new Cancellable ();
++			Timeout.add_seconds (8, () => {
++				stop_cancellable.cancel ();
++				return Source.REMOVE;
++			});
+ 
+ 			io_cancellable.cancel ();
+ 
+@@ -319,6 +345,7 @@ namespace Frida.Inject {
+ 		private void on_detached (SessionDetachReason reason, Crash? crash) {
+ 			if (reason == APPLICATION_REQUESTED)
+ 				return;
++			printerr ("MIUI_SESSION_LOST\n");
+ 
+ 			var message = new StringBuilder ();
+ 
+@@ -490,7 +517,21 @@ namespace Frida.Inject {
+ 				script_monitor = null;
+ 			}
+ 
++			if (session.is_detached ())
++				return;
++			bool disposed = false;
++			try {
++				if (script == null)
++					throw new Error.INVALID_OPERATION ("Script was not loaded");
++				yield rpc_client.call ("dispose", new Json.Node[] {}, null, cancellable);
++				disposed = true;
++			} catch (GLib.Error e) {
++				printerr ("Agent disposal unconfirmed: %s\n", e.message);
++			}
+ 			yield session.detach (cancellable);
++			cancellable.set_error_if_cancelled ();
++			if (disposed)
++				printerr ("MIUI_DISPOSED_DETACHED\n");
+ 
+ 			restore_terminal_config ();
+ 		}
+@@ -550,13 +591,9 @@ namespace Frida.Inject {
+ 			}
+ 		}
+ 
+-		private async void call_init () {
++		private async void call_init () throws Error, IOError {
+ 			var stage = new Json.Node.alloc ().init_string ("early");
+-
+-			try {
+-				yield rpc_client.call ("init", new Json.Node[] { stage, parameters }, null, io_cancellable);
+-			} catch (GLib.Error e) {
+-			}
++			yield rpc_client.call ("init", new Json.Node[] { stage, parameters }, null, io_cancellable);
+ 		}
+ 
+ #if WINDOWS
+diff --git a/lib/agent/agent.vala b/lib/agent/agent.vala
+index 2ee1147..6de105a 100644
+--- a/lib/agent/agent.vala
++++ b/lib/agent/agent.vala
+@@ -383,6 +383,8 @@ namespace Frida.Agent {
+ 			interceptor = Gum.Interceptor.obtain ();
+ 
+ 			try {
++				if (!can_allocate_code ())
++					throw new Error.PERMISSION_DENIED ("Target cannot allocate executable memory");
+ 				yield setup_connection_with_transport_uri (transport_uri);
+ #if ANDROID && (ARM || ARM64)
+ 				if (in_emulated_realm)
+@@ -394,9 +396,6 @@ namespace Frida.Agent {
+ 				return;
+ 			}
+ 
+-			if (!can_allocate_code ())
+-				delegate_code_memory_to_controller ();
+-
+ 			interceptor.begin_transaction ();
+ 
+ 			if (enable_exit_monitor)
+diff --git a/lib/pipe/pipe.vala b/lib/pipe/pipe.vala
+index cd0f8e1..9f79129 100644
+--- a/lib/pipe/pipe.vala
++++ b/lib/pipe/pipe.vala
+@@ -168,9 +168,6 @@ namespace Frida {
+ 					socket.listen ();
+ 
+ 					Posix.chmod (path, Posix.S_IRUSR | Posix.S_IWUSR | Posix.S_IRGRP | Posix.S_IWGRP | Posix.S_IROTH | Posix.S_IWOTH);
+-#if ANDROID
+-					SELinux.setfilecon (path, "u:object_r:frida_file:s0");
+-#endif
+ 
+ 					establish_server.begin (socket, server_address, promise, cancellable);
+ 				} else {
+diff --git a/lib/selinux/meson.build b/lib/selinux/meson.build
+index 79841e8..da3f930 100644
+--- a/lib/selinux/meson.build
++++ b/lib/selinux/meson.build
+@@ -3,7 +3,7 @@ frida_selinux_incdir = include_directories('.')
+ frida_selinux_h = files('frida-selinux.h')
+ install_headers(frida_selinux_h, subdir: 'frida-' + api_version)
+ 
+-frida_selinux = static_library('frida-selinux', 'patch.c',
++frida_selinux = static_library('frida-selinux', 'policy-disabled.c',
+   c_args: frida_component_cflags,
+   dependencies: [glib_dep, gio_dep, libselinux_dep, libsepol_dep],
+ )
+diff --git a/lib/selinux/policy-disabled.c b/lib/selinux/policy-disabled.c
+new file mode 100644
+index 0000000..f30e589
+--- /dev/null
++++ b/lib/selinux/policy-disabled.c
+@@ -0,0 +1,7 @@
++#include "frida-selinux.h"
++
++void
++frida_selinux_patch_policy (void)
++{
++  /* Leave Android policy and its enforcement mode as configured. */
++}
+diff --git a/src/linux/frida-helper-backend.vala b/src/linux/frida-helper-backend.vala
+index 689bc48..8a4e82a 100644
+--- a/src/linux/frida-helper-backend.vala
++++ b/src/linux/frida-helper-backend.vala
+@@ -326,25 +326,13 @@ namespace Frida {
+ 				if (pss != null)
+ 					yield pss.interrupt (cancellable);
+ 
+-				if (KernelInjectSession.is_available ()) {
+-					var session = yield KernelInjectSession.open (pid, cancellable);
+-					return yield session.inject (spec, cancellable);
+-				}
+-
+-				try {
+-					var session = yield InjectSession.open (pid, cancellable);
+-					RemoteAgent agent = yield session.inject (spec, cancellable);
+-					if (session.was_group_stopped)
+-						backend.suspended_by_inject[pid] = session;
+-					else
+-						close_unless_gone (session);
+-					return agent;
+-				} catch (Error e) {
+-					if (!(e is Error.PERMISSION_DENIED) || !ProcMemInjectSession.is_available ())
+-						throw e;
+-					var session = yield ProcMemInjectSession.open (pid, cancellable);
+-					return yield session.inject (spec, cancellable);
+-				}
++				var session = yield InjectSession.open (pid, cancellable);
++				RemoteAgent agent = yield session.inject (spec, cancellable);
++				if (session.was_group_stopped)
++					backend.suspended_by_inject[pid] = session;
++				else
++					close_unless_gone (session);
++				return agent;
+ 			}
+ 		}
+ 
+@@ -429,12 +417,6 @@ namespace Frida {
+ 			}
+ 
+ 			public async RemoteAgent run (uint pid, Cancellable? cancellable) throws Error, IOError {
+-				if (KernelInjectSession.is_available ()) {
+-					var session = yield KernelInjectSession.open (pid, cancellable);
+-					yield session.deallocate (agent.bootstrap_result, cancellable);
+-					return agent;
+-				}
+-
+ 				var session = yield CleanupSession.open (pid, cancellable);
+ 				yield session.deallocate (agent.bootstrap_result, cancellable);
+ 				session.close ();
+@@ -2019,38 +2001,27 @@ namespace Frida {
+ 
+ 			switch (on_init) {
+ 				case INTERRUPT: {
+-					bool maybe_already_attached = res == -1 && errsv == Posix.EPERM;
+-					if (maybe_already_attached) {
+-						try {
+-							get_regs (&saved_regs);
+-						} catch (Error e) {
+-							throw new Error.PERMISSION_DENIED ("Process is traced by another process");
+-						}
++					if (res == -1)
++						throw_ptrace_error (req, pid, errsv);
+ 
+-						attach_state = ALREADY_ATTACHED;
+-					} else {
+-						if (res == -1)
+-							throw_ptrace_error (req, pid, errsv);
+-
+-						attach_state = ATTACHED;
+-
+-						if (seize_supported) {
+-							if (was_stopped) {
+-								was_group_stopped = true;
+-								yield wait_for_next_stop (cancellable);
+-								Posix.kill ((Posix.pid_t) pid, Posix.Signal.CONT);
+-							} else {
+-								ptrace (INTERRUPT, tid);
+-								yield wait_for_signal (TRAP, cancellable);
+-							}
++					attach_state = ATTACHED;
++
++					if (seize_supported) {
++						if (was_stopped) {
++							was_group_stopped = true;
++							yield wait_for_next_stop (cancellable);
++							Posix.kill ((Posix.pid_t) pid, Posix.Signal.CONT);
+ 						} else {
+-							yield wait_for_signal (STOP, cancellable);
+-							ptrace (SETOPTIONS, tid, null, (void *) options);
++							ptrace (INTERRUPT, tid);
++							yield wait_for_signal (TRAP, cancellable);
+ 						}
+-
+-						get_regs (&saved_regs);
++					} else {
++						yield wait_for_signal (STOP, cancellable);
++						ptrace (SETOPTIONS, tid, null, (void *) options);
+ 					}
+ 
++					get_regs (&saved_regs);
++
+ 					break;
+ 				}
+ 				case CONTINUE:
+@@ -2326,7 +2297,9 @@ namespace Frida {
+ 					return result;
+ 				if (errno == Posix.ENOSYS)
+ 					process_vm_readv = null;
+-				else if (errno != Posix.EPERM && errno != Posix.EFAULT)
++				else if (errno == Posix.EPERM || errno == Posix.EACCES)
++					throw new Error.PERMISSION_DENIED ("Process memory access denied");
++				else if (errno != Posix.EFAULT)
+ 					throw new Error.NOT_SUPPORTED ("Unable to read from process memory: %s", strerror (errno));
+ 			}
+ 
+@@ -2362,7 +2335,9 @@ namespace Frida {
+ 					return;
+ 				if (errno == Posix.ENOSYS)
+ 					process_vm_writev = null;
+-				else if (errno != Posix.EPERM && errno != Posix.EFAULT)
++				else if (errno == Posix.EPERM || errno == Posix.EACCES)
++					throw new Error.PERMISSION_DENIED ("Process memory access denied");
++				else if (errno != Posix.EFAULT)
+ 					throw new Error.NOT_SUPPORTED ("Unable to write to process memory: %s", strerror (errno));
+ 			}
+ #endif
+@@ -3192,8 +3167,7 @@ namespace Frida {
+ 				throw new Error.PROCESS_NOT_FOUND ("Process not found");
+ 			case Posix.EPERM:
+ 				throw new Error.PERMISSION_DENIED (
+-					"Unable to access process with pid %u due to system restrictions;" +
+-					" try `sudo sysctl kernel.yama.ptrace_scope=0`, or run Frida as root",
++					"Unable to access process with pid %u due to system restrictions",
+ 					pid);
+ 			default:
+ 				throw new Error.NOT_SUPPORTED ("Unable to perform ptrace %s: %s",
+diff --git a/src/linux/frida-helper-process.vala b/src/linux/frida-helper-process.vala
+index 7a150c6..6aa668c 100644
+--- a/src/linux/frida-helper-process.vala
++++ b/src/linux/frida-helper-process.vala
+@@ -374,22 +374,15 @@ namespace Frida {
+ 
+ 				string[] envp = Environ.unset_variable (Environ.get (), "LD_LIBRARY_PATH");
+ 
+-				try {
+-					string cwd = "/";
+-					string[] argv = new string[] { "su", "-c", helper_file.path, socket_address };
+-					bool capture_output = false;
+-					pending_superprocess = yield SuperSU.spawn (cwd, argv, envp, capture_output, cancellable);
+-				} catch (Error e) {
+-					string[] argv = { helper_file.path, socket_address };
+-
+-					GLib.SpawnFlags flags =
+-						GLib.SpawnFlags.LEAVE_DESCRIPTORS_OPEN |
+-						GLib.SpawnFlags.STDOUT_TO_DEV_NULL |
+-						GLib.SpawnFlags.STDERR_TO_DEV_NULL |
+-						/* GLib.SpawnFlags.STDIN_FROM_DEV_NULL */ 2048 |
+-						/* GLib.SpawnFlags.CLOEXEC_PIPES */ 256;
+-					GLib.Process.spawn_async (null, argv, envp, flags, null, out pending_pid);
+-				}
++				string[] argv = { helper_file.path, socket_address };
++
++				GLib.SpawnFlags flags =
++					GLib.SpawnFlags.LEAVE_DESCRIPTORS_OPEN |
++					GLib.SpawnFlags.STDOUT_TO_DEV_NULL |
++					GLib.SpawnFlags.STDERR_TO_DEV_NULL |
++					/* GLib.SpawnFlags.STDIN_FROM_DEV_NULL */ 2048 |
++					/* GLib.SpawnFlags.CLOEXEC_PIPES */ 256;
++				GLib.Process.spawn_async (null, argv, envp, flags, null, out pending_pid);
+ 
+ 				yield;
+ 
+diff --git a/src/linux/linjector.vala b/src/linux/linjector.vala
+index 5671438..46666de 100644
+--- a/src/linux/linjector.vala
++++ b/src/linux/linjector.vala
+@@ -63,7 +63,6 @@ namespace Frida {
+ 
+ 			if (MemoryFileDescriptor.is_supported ()) {
+ 				FileDescriptor fd = MemoryFileDescriptor.from_bytes (name, blob);
+-				adjust_fd_permissions (fd);
+ 				UnixInputStream library_so = new UnixInputStream (fd.steal (), true);
+ 				return yield inject_library_fd (pid, library_so, entrypoint, data, features, cancellable);
+ 			}
+@@ -255,7 +254,6 @@ namespace Frida {
+ 				if (!MemoryFileDescriptor.is_supported ())
+ 					throw new Error.NOT_SUPPORTED ("Kernel too old for memfd support");
+ 				FileDescriptor fd = MemoryFileDescriptor.from_bytes (name, blob);
+-				adjust_fd_permissions (fd);
+ 				_memfd = new UnixInputStream (fd.steal (), true);
+ 			}
+ 			return _memfd;
+@@ -264,21 +262,10 @@ namespace Frida {
+ 
+ 	private static void adjust_directory_permissions (string path) {
+ 		FileUtils.chmod (path, 0755);
+-#if ANDROID
+-		SELinux.setfilecon (path, "u:object_r:frida_file:s0");
+-#endif
+ 	}
+ 
+ 	private static void adjust_file_permissions (string path) {
+ 		FileUtils.chmod (path, path.has_suffix (".so") ? 0755 : 0644);
+-#if ANDROID
+-		SELinux.setfilecon (path, "u:object_r:frida_file:s0");
+-#endif
+ 	}
+ 
+-	private static void adjust_fd_permissions (FileDescriptor fd) {
+-#if ANDROID
+-		SELinux.fsetfilecon (fd.handle, "u:object_r:frida_memfd:s0");
+-#endif
+-	}
+ }
+diff --git a/src/linux/linux-host-session.vala b/src/linux/linux-host-session.vala
+index 1b825ee..102f436 100644
+--- a/src/linux/linux-host-session.vala
++++ b/src/linux/linux-host-session.vala
+@@ -2461,18 +2461,6 @@ namespace Frida {
+ 		private async void start_monitoring () {
+ 			InputStream? stdout_pipe = null;
+ 
+-			try {
+-				string cwd = "/";
+-				string[] argv = new string[] { "su", "-c", "logcat", "-b", "crash", "-B" };
+-				string[]? envp = null;
+-				bool capture_output = true;
+-				var process = yield SuperSU.spawn (cwd, argv, envp, capture_output, io_cancellable);
+-
+-				logcat = process;
+-				stdout_pipe = process.output;
+-			} catch (GLib.Error e) {
+-			}
+-
+ 			if (stdout_pipe == null) {
+ 				try {
+ 					var process = new Subprocess.newv ({ "logcat", "-b", "crash", "-B" },

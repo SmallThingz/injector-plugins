@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "amethyst-live-freeform",
+      "dependencies": {
+        "frida-java-bridge": "7.1.0",
+      },
+    },
+  },
+  "packages": {
+    "frida-java-bridge": ["frida-java-bridge@7.1.0", "", {}, "sha512-pO4EiE44n1gIdIhR9twHEKeAssQN9d546ZTl+AjEcrTrFL8FiaT9Zkoc0mabwxU/qbZsEJ/yQt++MSMv7k8jLQ=="],
+  }
+}

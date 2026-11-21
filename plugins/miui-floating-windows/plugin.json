@@ -1,0 +1,31 @@
+{
+  "id": "miui-floating-windows",
+  "name": "MIUI floating windows (experimental)",
+  "version": "0.1",
+  "description": "On amethyst OS3.0.303.0.WOPINXM, attachment failed with remote mmap MAP_FAILED and MIUI_NO_AGENT. No floating-window override was applied.",
+  "backend": "root",
+  "runtime": "shell",
+  "hooks": {
+    "enable": "hook.sh",
+    "run": "hook.sh",
+    "disable": "hook.sh"
+  },
+  "ui": {
+    "inputs": [
+      {
+        "id": "limit",
+        "label": "Floating-window limit",
+        "type": "slider",
+        "min": 3,
+        "max": 256,
+        "step": 1,
+        "default": 3
+      }
+    ],
+    "presentation": {
+      "icon": "windows",
+      "headline": "{limit} windows",
+      "description": "Requested limit for an experimental session. Attachment fails on the tested firmware."
+    }
+  }
+}
