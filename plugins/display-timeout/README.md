@@ -2,7 +2,7 @@
 
 Adjusts only `system/screen_off_timeout`. Choices are 15 seconds, 30 seconds,
 1 minute (the default), 2 minutes, 5 minutes, 10 minutes, and 30 minutes. The
-Android user active at Enable is captured once; later Run, boot, and Disable
+Android user active at Enable is captured once; later Apply, boot, and Disable
 use that same numeric user ID even if the foreground user changes. Disable and
 Enable again to select a different user. There is no keep-awake or never option.
 
@@ -14,8 +14,8 @@ enabling the source-only `screen-timeout` example alongside this plugin because
 both manage the same key.
 
 Install the private ZIP, review it, and explicitly Enable. Packages install
-disabled. Configure and Save only changes the draft; Run applies it after a
-successful Enable. Run before Enable does not change Android settings. Restart
+disabled. Configure and Save only changes the draft; Apply applies it after a
+successful Enable. Apply before Enable does not change Android settings. Restart
 reapplication is on by default, can be switched off in the After restart group,
 and only runs for an enabled installation. The manifest declares boot and
 waitForRoot; Injector waits for previously authorized root. These hooks do not
@@ -37,7 +37,7 @@ is never claimed as owned. If readback or rollback cannot be reconciled, state
 is retained and the hook fails. Disable can restore the identifiable owned
 values and preserve conflicting external values. Repeated Disable retries are
 safe, including after Injector has already marked the installation disabled.
-A later Run with no completed Enable only recovers an unfinished transaction;
+A later Apply with no completed Enable only recovers an unfinished transaction;
 it does not activate the plugin.
 
 The journal is atomically replaced under the backend's persistent state
@@ -53,9 +53,10 @@ ownership. Disable reports and preserves it.
 
 The grouped controls and summary use Injector's existing declarative native
 presentation. No app/UI source changes or extra permissions are required.
-Physical Android execution and visual QA are pending parent review; the host
-tests below exercise the real POSIX hooks against a fault-injected settings CLI,
-not an Android emulator.
+The parent reports that actual device Apply and Disable restoration passed.
+This does not qualify reboot reapplication or every conflict/recovery scenario.
+The host tests below exercise the real POSIX hooks against a fault-injected
+settings CLI, not an Android emulator. This packaging task runs no phone tests.
 
 From the Injector repository root:
 

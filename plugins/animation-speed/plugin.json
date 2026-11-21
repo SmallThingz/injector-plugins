@@ -2,7 +2,7 @@
   "id": "animation-speed",
   "name": "Animation speed",
   "version": "0.1",
-  "description": "Adjust Android animation duration. 100% is normal, 50% is faster, and 0% turns animations off. Enable to apply; Save then Run to update. Disable restores owned values.",
+  "description": "Adjust Android animation duration. Apply changes while enabled; Disable restores previous values unless changed elsewhere.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {

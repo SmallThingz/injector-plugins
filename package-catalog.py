@@ -21,10 +21,10 @@ PACKAGE_FILES = {
     "display-timeout": COMMON + ("settings-state.sh",),
 }
 CATALOG_DESCRIPTIONS = {
-    "battery-charge-limit": "Set charge limits on supported devices. Device testing pending.",
-    "cpu-control": "Control CPU governors and frequency ceilings. Device testing pending.",
-    "animation-speed": "Adjust Android animation duration and reapply after restart while enabled. Device testing pending.",
-    "display-timeout": "Choose the idle screen timeout and reapply after restart while enabled. Device testing pending.",
+    "battery-charge-limit": "Set charge limits on supported devices. Charger-connected stop/resume enforcement pending.",
+    "cpu-control": "Control CPU governors and frequency ceilings. Physical qualification pending.",
+    "animation-speed": "Adjust Android animation duration. Apply changes while enabled; Disable restores previous values unless changed elsewhere.",
+    "display-timeout": "Set the idle screen timeout. Apply changes while enabled; Disable restores the previous setting unless changed elsewhere.",
 }
 CATALOG_ICONS = {
     "battery-charge-limit": "battery",

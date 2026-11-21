@@ -8,10 +8,10 @@ The plugin uses a single battery's writable `charge_control_end_threshold` and, 
 
 The driver handles charging directly. The plugin starts no worker and performs no boot-time writes. If the firmware resets a threshold across reboot, the next hook reports that its saved values conflict with the device.
 
-From this directory, run the host tests with the following command. Physical qualification of this candidate is pending. The repository root README covers packaging.
+From this directory, run the host tests with the following command. Charger-connected stop/resume enforcement remains pending. The repository root README covers packaging.
 
 ```sh
 python3 test_hooks.py
 ```
 
-Read-only observations on amethyst OS3.0.303 / Android 16 found both native attributes and a `0/0` starting pair while the charger was disconnected. Physical qualification still needs exact `75/80` start/stop readback, a charger-connected stop and resume cycle, and verified restoration to `0/0` on Disable.
+Earlier read-only observations on amethyst OS3.0.303 / Android 16 found both native attributes and a `0/0` starting pair while the charger was disconnected. Setting/readback and restoration alone do not establish charging enforcement: a charger-connected stop and resume cycle remains pending with the parent. This packaging task performs no device qualification.

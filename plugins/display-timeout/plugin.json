@@ -2,7 +2,7 @@
   "id": "display-timeout",
   "name": "Display timeout",
   "version": "0.1",
-  "description": "Choose when an idle screen turns off for the Android user active at Enable. Save then Run to update. Disable restores owned values. Device policy and apps may limit the effective timeout.",
+  "description": "Set the idle screen timeout. Apply changes while enabled; Disable restores the previous setting unless changed elsewhere.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {

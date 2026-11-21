@@ -30,14 +30,21 @@ this preparation does not change an app catalog pin.
 
 | Plugin | Catalog source |
 | --- | --- |
-| [Battery charge limit](plugins/battery-charge-limit/README.md) | Recovery fixes and host tests from Injector commit `8e1416f`. |
-| [CPU frequency control](plugins/cpu-control/README.md) | Recovery fixes and host tests from Injector commit `8e1416f`. |
-| [Animation speed](plugins/animation-speed/README.md) | Reviewed postboot source; physical qualification pending. |
-| [Display timeout](plugins/display-timeout/README.md) | Reviewed postboot source; physical qualification pending. |
+| [Battery charge limit](plugins/battery-charge-limit/README.md) | Reviewed recovery fixes unchanged. Charger-connected stop/resume enforcement remains pending. |
+| [CPU frequency control](plugins/cpu-control/README.md) | Reviewed recovery fixes unchanged. Physical qualification remains pending. |
+| [Animation speed](plugins/animation-speed/README.md) | Actual device Apply and Disable restoration passed, as reported by the parent. |
+| [Display timeout](plugins/display-timeout/README.md) | Actual device Apply and Disable restoration passed, as reported by the parent. |
+
+The manifests include the parent's current Apply wording. Implementation,
+helpers, tests and standalone packagers are exact copies of the reviewed
+Injector sources. Catalog-local README qualification notes and NOTICE files
+are documentation additions. Apply/restore results do not establish reboot
+reapplication or every conflict/recovery scenario. MIUI has no successful
+qualification and remains excluded from the pending/default catalog.
 
 The new plugins declare boot reapplication and wait for previously authorized
 root. Installation remains disabled until explicitly enabled. Their copied
-READMEs and `package.py` describe the upstream standalone import packages.
+`package.py` files describe the upstream standalone import packages.
 Catalog ZIPs instead use the root packager below and include README and NOTICE.
 No private artifacts, device logs or app build outputs belong in this repository.
 
