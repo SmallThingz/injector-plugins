@@ -1,23 +1,45 @@
-[
-  {
-    "name": "Battery charge limit",
-    "description": "Set charge limits on supported devices. Device testing pending.",
-    "manifestUrl": "plugins/battery-charge-limit/plugin.json",
-    "packageUrl": "packages/battery-charge-limit.zip",
-    "sha256": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed"
-  },
-  {
-    "name": "CPU frequency control",
-    "description": "Control CPU governors and frequency ceilings. Device testing pending.",
-    "manifestUrl": "plugins/cpu-control/plugin.json",
-    "packageUrl": "packages/cpu-control.zip",
-    "sha256": "673a43d859196b132609046eba1e732a25e598bf86cbd22a0d4643d0f0a8f1d1"
-  },
-  {
-    "name": "MIUI floating windows (experimental)",
-    "description": "Experimental. Not working on the tested HyperOS firmware.",
-    "manifestUrl": "plugins/miui-floating-windows/plugin.json",
-    "packageUrl": "packages/miui-floating-windows.zip",
-    "sha256": "9305f44d3083400bbcdbe0296c7b4739165dd48f3d870a6e3fa8df726da98608"
-  }
-]
+{
+  "name": "Injector",
+  "description": "Official Injector plugin catalog.",
+  "plugins": [
+    {
+      "name": "Battery charge limit",
+      "description": "Set charge limits on supported devices. Device testing pending.",
+      "icon": "battery",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
+        "tag": "plugins-20261121",
+        "asset": "battery-charge-limit.zip",
+        "sha256": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed",
+        "manifestPath": "plugins/battery-charge-limit/plugin.json"
+      }
+    },
+    {
+      "name": "CPU frequency control",
+      "description": "Control CPU governors and frequency ceilings. Device testing pending.",
+      "icon": "cpu",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
+        "tag": "plugins-20261121",
+        "asset": "cpu-control.zip",
+        "sha256": "673a43d859196b132609046eba1e732a25e598bf86cbd22a0d4643d0f0a8f1d1",
+        "manifestPath": "plugins/cpu-control/plugin.json"
+      }
+    },
+    {
+      "name": "MIUI floating windows (experimental)",
+      "description": "Experimental. Not working on the tested HyperOS firmware.",
+      "icon": "windows",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
+        "tag": "plugins-20261121",
+        "asset": "miui-floating-windows.zip",
+        "sha256": "9305f44d3083400bbcdbe0296c7b4739165dd48f3d870a6e3fa8df726da98608",
+        "manifestPath": "plugins/miui-floating-windows/plugin.json"
+      }
+    }
+  ]
+}

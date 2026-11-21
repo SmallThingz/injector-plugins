@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
+  "tag": "plugins-20261121",
+  "assets": {
+    "battery-charge-limit.zip": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed",
+    "cpu-control.zip": "673a43d859196b132609046eba1e732a25e598bf86cbd22a0d4643d0f0a8f1d1",
+    "miui-floating-windows.zip": "9305f44d3083400bbcdbe0296c7b4739165dd48f3d870a6e3fa8df726da98608"
+  }
+}

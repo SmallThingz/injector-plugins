@@ -1,9 +1,54 @@
 # Injector plugin catalog
 
-This is the default remote catalog for Injector. `catalog.json` uses paths
-relative to the catalog URL on the `main` branch. Each entry links to the
-source manifest and a ZIP with the same `plugin.json` at its root. Injector
-checks the ZIP against the catalog's SHA-256 before import.
+This is the official plugin catalog for Injector. `catalog.json` contains the
+catalog name, description and a `plugins` array. Each entry declares a name,
+description, icon and pinned GitHub plugin release.
+
+The plugin sources and ZIPs belong to commit
+`48b04021202534b63fc58493ff71ba2291a4eac6`. `release.json` declares that source
+commit, the planned tag `plugins-20261121`, and each asset's SHA-256. The new
+catalog is committed separately so its release records can refer to the
+existing source commit without a circular commit reference.
+
+The app's immutable default catalog URL should use the full commit that
+contains this new catalog, in the form
+`https://raw.githubusercontent.com/SmallThingz/injector-plugins/<catalog-commit>/catalog.json`.
+That catalog commit is available after these changes are committed.
+
+## Catalog schema
+
+The following example shows one entry. The full catalog includes all three
+plugins, using the icons `battery`, `cpu` and `windows`.
+
+```json
+{
+  "name": "Injector",
+  "description": "Official Injector plugin catalog.",
+  "plugins": [
+    {
+      "name": "Battery charge limit",
+      "description": "Set charge limits on supported devices. Device testing pending.",
+      "icon": "battery",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
+        "tag": "plugins-20261121",
+        "asset": "battery-charge-limit.zip",
+        "sha256": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed",
+        "manifestPath": "plugins/battery-charge-limit/plugin.json"
+      }
+    }
+  ]
+}
+```
+
+Consumers must resolve the release tag to a commit, including peeling annotated
+tags, and require equality with `release.commit`. They fetch `manifestPath`
+from that commit, download the named GitHub release asset, verify its SHA-256,
+and check its root `plugin.json` against the pinned manifest before import.
+The GitHub release assets are published from the exact ZIPs in `packages/`.
+
+## Qualification
 
 | Plugin | Qualification |
 | --- | --- |
@@ -13,19 +58,29 @@ checks the ZIP against the catalog's SHA-256 before import.
 
 ## Rebuild and verify
 
-From the repository root, use the pinned custom arm64 Frida binary or extract
-`frida-inject` from the existing experimental package into a temporary output
-directory. The packager uses fixed ZIP metadata and uncompressed entries so
-that the same source and pinned payload produce identical bytes.
+From the repository root, regenerate the catalog using `release.json` and the
+existing pinned payload. The Git clone must contain the declared source commit.
+The packager uses fixed ZIP metadata and uncompressed entries so that the same
+source and pinned payload produce identical bytes.
 
 ```sh
-python3 package-catalog.py build --frida-inject /path/to/frida-inject
+python3 package-catalog.py build
 python3 package-catalog.py verify
 ```
 
-The build writes `catalog.json` and the three files in `packages/`. Verification
-checks those files against the source, compares their SHA-256 values with the
-catalog, and checks both MIUI payload hashes. It can run from a fresh clone
-without a separate Frida binary. The MIUI source directory carries the pinned
-native build recipe, JavaScript source and lockfile, patch, and supplied
-third-party notices.
+Build regenerates `catalog.json` and reproduces all three ZIPs, preserving
+existing files when their bytes match. Both commands require the plugin source
+and package files to match the declared source commit, compare rebuilt ZIPs
+with the committed asset hashes, and check both MIUI payload hashes. Verify
+also compares the entire generated catalog with `catalog.json`. An optional
+`--frida-inject /path/to/frida-inject` argument to build supplies the exact
+pinned custom binary separately. The MIUI source directory carries the pinned
+native build recipe, JavaScript source and lockfile, patch, and supplied notices.
+
+## Publication
+
+After review, publish the plugin release under `plugins-20261121` with its tag
+resolving to the source commit above and upload the three ZIPs under their
+declared asset names. Commit the new catalog and configure the app's default
+catalog URL with that full catalog commit. The tag and plugin release are
+pending publication. Injector stays at app version 0.1 without an app release.
