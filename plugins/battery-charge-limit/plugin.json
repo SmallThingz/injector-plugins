@@ -2,7 +2,7 @@
   "id": "battery-charge-limit",
   "name": "Battery charge limit",
   "version": "0.1",
-  "description": "Set the battery charge limit. Resume applies on devices with a writable start threshold. Save, then Run to apply changes while enabled. Disable restores the previous thresholds.",
+  "description": "Set the battery charge limit. Resume applies on devices with a writable start threshold. Apply changes while enabled. Disable restores the previous thresholds.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {

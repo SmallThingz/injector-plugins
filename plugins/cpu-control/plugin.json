@@ -2,7 +2,7 @@
   "id": "cpu-control",
   "name": "CPU frequency control",
   "version": "0.1",
-  "description": "Choose a governor and frequency ceiling for each amethyst CPU group. Save and run to apply. Disable restores settings the plugin still controls.",
+  "description": "Choose a governor and frequency ceiling for each amethyst CPU group. Apply changes while enabled. Disable restores settings the plugin still controls.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {
