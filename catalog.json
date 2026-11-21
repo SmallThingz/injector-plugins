@@ -4,54 +4,41 @@
   "plugins": [
     {
       "name": "Battery charge limit",
-      "description": "Set charge limits on supported devices. Charger-connected stop/resume enforcement pending.",
+      "description": "Requires a supported charge controller.",
       "icon": "battery",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
-        "tag": "plugins-20261122",
+        "commit": "439f691a85a5fab0695c3ecccd49b994430fac38",
+        "tag": "plugins-20261122-power-2",
         "asset": "battery-charge-limit.zip",
-        "sha256": "d4a81f6aefc6ffc126a2411167b375875d5677947113138c3192aa76822d04af",
+        "sha256": "62519bd9dda2dcad8e202bdd3921bd7f17975ee502402b1ef6c8a2e45dbf4cfa",
         "manifestPath": "plugins/battery-charge-limit/plugin.json"
       }
     },
     {
       "name": "CPU frequency control",
-      "description": "Control CPU governors and frequency ceilings. Physical qualification pending.",
+      "description": "Efficiency-core ceiling and per-policy governors; amethyst OS3.0.303.",
       "icon": "cpu",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
-        "tag": "plugins-20261122",
+        "commit": "439f691a85a5fab0695c3ecccd49b994430fac38",
+        "tag": "plugins-20261122-power-2",
         "asset": "cpu-control.zip",
-        "sha256": "ff1445a6a4f8568e1203e3adc5b27d8537c8b13e8ba4310eabfd915cb2623180",
+        "sha256": "e6036954b88d28b4d49bc5ba7d3360855fac13bfbc4f116ab01fe301da8f26e7",
         "manifestPath": "plugins/cpu-control/plugin.json"
       }
     },
     {
-      "name": "Animation speed",
-      "description": "Adjust Android animation duration. Apply changes while enabled; Disable restores previous values unless changed elsewhere.",
-      "icon": "windows",
-      "release": {
-        "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
-        "tag": "plugins-20261122",
-        "asset": "animation-speed.zip",
-        "sha256": "8d3299fcc4a69e696cac8337da72c130eb5878d2462b6efc76c4fe8f094813da",
-        "manifestPath": "plugins/animation-speed/plugin.json"
-      }
-    },
-    {
-      "name": "Display timeout",
-      "description": "Set the idle screen timeout. Apply changes while enabled; Disable restores the previous setting unless changed elsewhere.",
+      "name": "Caffeine",
+      "description": "Timed or untimed screen-awake sessions across apps.",
       "icon": "plugin",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "5bd2c075383bd0cfb22eb6b3ccaae2f47a9aa0a7",
-        "tag": "plugins-20261122",
-        "asset": "display-timeout.zip",
-        "sha256": "b527851b14f04b3aff77fb135c47e052ec27ac8d46194be9b5077384713256ce",
-        "manifestPath": "plugins/display-timeout/plugin.json"
+        "commit": "439f691a85a5fab0695c3ecccd49b994430fac38",
+        "tag": "plugins-20261122-power-2",
+        "asset": "caffeine.zip",
+        "sha256": "140f5c305d26ba0adc3f7da39bfbe27a3ad90741141f4bec83054e6f9aa151f5",
+        "manifestPath": "plugins/caffeine/plugin.json"
       }
     }
   ]
