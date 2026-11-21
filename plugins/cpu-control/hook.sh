@@ -79,6 +79,7 @@ mkdir -p "$stage/new"
 [ -f "$active" ] || : > "$active"
 : > "$stage/new/next"
 : > "$stage/new/plan"
+: > "$stage/new/verify"
 
 # Each active row is policy, attribute, original value, last confirmed value.
 # Treat a broken journal as an error before interpreting any of its values.
@@ -133,6 +134,7 @@ plan_field() {
     if [ "$wanted" != "$original" ]; then
         printf '%s %s %s %s\n' "$policy" "$node" "$original" "$wanted" >> "$stage/new/next"
     fi
+    printf '%s %s %s\n' "$policy" "$node" "$wanted" >> "$stage/new/verify"
     case $node in
         scaling_max_freq) echo "$policy maximum frequency requested: $wanted kHz" ;;
         scaling_governor) echo "$policy governor requested: $wanted" ;;
@@ -164,8 +166,10 @@ while read -r policy node before target; do
     : > "$pending/attempt.$idx"
     write_value "$dir" "$node" "$before" "$target" || fail "Write or readback failed for $policy/$node."
 done < "$pending/plan"
-while read -r policy node original applied; do
-    [ "$(cat "$cpufreq/$policy/$node")" = "$applied" ] || fail "$policy/$node changed during apply."
-done < "$pending/next"
+# Verify restored values too, since those fields will leave the active journal.
+while read -r policy node target; do
+    current=$(cat "$cpufreq/$policy/$node") || fail "Cannot verify $policy/$node."
+    [ "$current" = "$target" ] || fail "$policy/$node changed during apply."
+done < "$pending/verify"
 mv "$pending/next" "$active"
 echo 'CPU frequency settings confirmed.'

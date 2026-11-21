@@ -1,0 +1,80 @@
+{
+  "id": "display-timeout",
+  "name": "Display timeout",
+  "version": "0.1",
+  "description": "Choose when an idle screen turns off for the Android user active at Enable. Save then Run to update. Disable restores owned values. Device policy and apps may limit the effective timeout.",
+  "backend": "root",
+  "runtime": "shell",
+  "hooks": {
+    "enable": "hook.sh",
+    "run": "hook.sh",
+    "disable": "hook.sh"
+  },
+  "triggers": {
+    "boot": true,
+    "waitForRoot": true
+  },
+  "ui": {
+    "groups": [
+      {
+        "id": "display",
+        "label": "Idle screen"
+      },
+      {
+        "id": "automation",
+        "label": "After restart"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "timeout_seconds",
+        "label": "Turn screen off after",
+        "group": "display",
+        "type": "choice",
+        "default": "60",
+        "options": [
+          {
+            "value": "15",
+            "label": "15 seconds"
+          },
+          {
+            "value": "30",
+            "label": "30 seconds"
+          },
+          {
+            "value": "60",
+            "label": "1 minute"
+          },
+          {
+            "value": "120",
+            "label": "2 minutes"
+          },
+          {
+            "value": "300",
+            "label": "5 minutes"
+          },
+          {
+            "value": "600",
+            "label": "10 minutes"
+          },
+          {
+            "value": "1800",
+            "label": "30 minutes"
+          }
+        ]
+      },
+      {
+        "id": "reapply_on_boot",
+        "label": "Reapply after restart while enabled",
+        "group": "automation",
+        "type": "toggle",
+        "default": true
+      }
+    ],
+    "presentation": {
+      "icon": "plugin",
+      "headline": "{timeout_seconds}",
+      "description": "For the user active at Enable. Longer timeouts keep the display on longer; device policy and apps can limit the effective timeout."
+    }
+  }
+}

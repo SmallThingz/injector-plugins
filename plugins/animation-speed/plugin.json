@@ -1,0 +1,78 @@
+{
+  "id": "animation-speed",
+  "name": "Animation speed",
+  "version": "0.1",
+  "description": "Adjust Android animation duration. 100% is normal, 50% is faster, and 0% turns animations off. Enable to apply; Save then Run to update. Disable restores owned values.",
+  "backend": "root",
+  "runtime": "shell",
+  "hooks": {
+    "enable": "hook.sh",
+    "run": "hook.sh",
+    "disable": "hook.sh"
+  },
+  "triggers": {
+    "boot": true,
+    "waitForRoot": true
+  },
+  "ui": {
+    "groups": [
+      {
+        "id": "animation",
+        "label": "Animation duration"
+      },
+      {
+        "id": "automation",
+        "label": "After restart"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "window_percent",
+        "label": "Window duration",
+        "group": "animation",
+        "type": "slider",
+        "min": 0,
+        "max": 200,
+        "step": 25,
+        "default": 100
+      },
+      {
+        "id": "transition_percent",
+        "label": "Transition duration",
+        "group": "animation",
+        "type": "slider",
+        "min": 0,
+        "max": 200,
+        "step": 25,
+        "default": 100
+      },
+      {
+        "id": "animator_percent",
+        "label": "Animator duration",
+        "group": "animation",
+        "type": "slider",
+        "min": 0,
+        "max": 200,
+        "step": 25,
+        "default": 100
+      },
+      {
+        "id": "reapply_on_boot",
+        "label": "Reapply after restart while enabled",
+        "group": "automation",
+        "type": "toggle",
+        "default": true
+      }
+    ],
+    "presentation": {
+      "icon": "windows",
+      "headline": "{window_percent}% / {transition_percent}% / {animator_percent}%",
+      "description": "Window, transition, animator. 100% is normal; 50% is faster; 0% turns animations off.",
+      "sliderUnits": {
+        "window_percent": "%",
+        "transition_percent": "%",
+        "animator_percent": "%"
+      }
+    }
+  }
+}

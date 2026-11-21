@@ -207,6 +207,26 @@ class CpuControl(unittest.TestCase):
         self.assertEqual(self.value('policy7', 'scaling_max_freq'), '1209600')
         self.assertEqual(self.active.read_text(), '')
 
+    def test_disable_rechecks_restored_fields_before_committing(self):
+        self.call('enable', policy4_percent=90, policy7_percent=90)
+        saved = self.active.read_text()
+        self.mock('cat', """if [ "$1" = "$SYSFS/policy7/scaling_max_freq" ] &&
+                [ -f "$JOURNAL/pending/attempt.2" ] &&
+                [ "$(/bin/cat "$1")" = 1900800 ] && [ ! -e "$JOURNAL/injected" ]; then
+            echo 1401600 > "$SYSFS/policy4/scaling_max_freq"
+            touch "$JOURNAL/injected"
+        fi
+        exec /bin/cat "$@" """)
+        log = self.call('disable', ok=False)
+        self.assertIn('policy4/scaling_max_freq changed during apply.', log)
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '1401600')
+        self.assertEqual(self.value('policy7', 'scaling_max_freq'), '1651200')
+        self.assertEqual(self.active.read_text(), saved)
+        self.assertIn('Preserved external policy4/scaling_max_freq', self.call('disable'))
+        self.assertEqual(self.value('policy4', 'scaling_max_freq'), '1401600')
+        self.assertEqual(self.value('policy7', 'scaling_max_freq'), '1900800')
+        self.assertEqual(self.active.read_text(), '')
+
     def test_failed_rollback_retries_on_next_hook(self):
         self.interrupt_readback('echo powersave > "$SYSFS/policy7/scaling_available_governors"; exit 1')
         self.call('enable', ok=False, policy0_governor='performance', policy7_governor='powersave')

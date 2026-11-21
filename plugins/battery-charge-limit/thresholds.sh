@@ -273,6 +273,7 @@ charge_limit() {
     save_state || fail 'Unable to save the previous thresholds.'
     if ! transition "$resume" "$stop"; then
         transition "$before_start" "$before_end" || fail 'Unable to roll back the rejected change. Saved state was retained.'
+        check_confirmed
         if [ "$before_phase" = preparing ] && [ "$confirmed_start/$confirmed_end" = "$original_start/$original_end" ]; then
             rm "$journal" || fail 'Original thresholds are verified, but the saved state could not be removed.'
         fi

@@ -1,84 +1,92 @@
 # Injector plugin catalog
 
-This is the official plugin catalog for Injector. `catalog.json` contains the
-catalog name, description and a `plugins` array. Each entry declares a name,
-description, icon and pinned GitHub plugin release.
+This repository prepares the default Injector catalog. The active package set
+is battery charge limit, CPU frequency control, animation speed and display
+timeout. MIUI floating windows is excluded from generated catalogs; its old
+source and ZIP remain historical artifacts and are never packaging inputs.
+Packaging requires only Python 3 and Git, with no Frida binary or native build.
 
-The plugin sources and ZIPs belong to commit
-`48b04021202534b63fc58493ff71ba2291a4eac6`. `release.json` declares that source
-commit, the tag `plugins-20261121`, and each asset's SHA-256. The new
-catalog is committed separately so its release records can refer to the
-existing source commit without a circular commit reference.
+## Pending candidate
 
-The app's immutable default catalog is
-`https://raw.githubusercontent.com/SmallThingz/injector-plugins/4b1fc9e8cd4130a7ad374633712cf9584cf6d1e5/catalog.json`,
-with SHA-256 `0d3afbaa9702e79654aea2034ca9c6f56bb6935e3a83c64c14feafefbad38969`.
+The next proposed tag is `plugins-20261122`. This is a local candidate, not a
+published release or a claim of physical qualification. Device qualification
+and publication belong to the parent maintainer.
 
-## Catalog schema
+During source preparation, root `release.json` retains the previous release
+pins and root `catalog.json` retains the parent's removal of MIUI. They are not
+yet the four-plugin catalog. Pending pins and catalog are generated separately
+under `.tmp/catalog-candidate/` after source commit A exists. The parent writes
+the final root pins and catalog in commit B after physical qualification.
+Do not use the pending catalog as an app default before its release is verified.
 
-The following example shows one entry. The full catalog includes all three
-plugins, using the icons `battery`, `cpu` and `windows`.
+The previous release is `plugins-20261121`, source commit
+`48b04021202534b63fc58493ff71ba2291a4eac6`. Its three immutable ZIP identities
+remain recoverable from Git; local verification copies are kept under
+`.tmp/priorhistory/plugins-20261121/`. Never replace its assets or move its tag.
+The prior catalog commit is `4b1fc9e8cd4130a7ad374633712cf9584cf6d1e5`;
+this preparation does not change an app catalog pin.
 
-```json
-{
-  "name": "Injector",
-  "description": "Official Injector plugin catalog.",
-  "plugins": [
-    {
-      "name": "Battery charge limit",
-      "description": "Set charge limits on supported devices. Device testing pending.",
-      "icon": "battery",
-      "release": {
-        "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "48b04021202534b63fc58493ff71ba2291a4eac6",
-        "tag": "plugins-20261121",
-        "asset": "battery-charge-limit.zip",
-        "sha256": "d07d8936c6bc78e757e1676f33d6427168e344cdc247e22312accddda63470ed",
-        "manifestPath": "plugins/battery-charge-limit/plugin.json"
-      }
-    }
-  ]
-}
-```
+## Sources and qualification
 
-Consumers must resolve the release tag to a commit, including peeling annotated
-tags, and require equality with `release.commit`. They fetch `manifestPath`
-from that commit, download the named GitHub release asset, verify its SHA-256,
-and check its root `plugin.json` against the pinned manifest before import.
-The GitHub release assets are published from the exact ZIPs in `packages/`.
-
-## Qualification
-
-| Plugin | Qualification |
+| Plugin | Catalog source |
 | --- | --- |
-| [Battery charge limit](plugins/battery-charge-limit/README.md) | 17 host tests passed. No phone writes tested. |
-| [CPU frequency control](plugins/cpu-control/README.md) | 12 host tests passed. No phone writes tested. |
-| [MIUI floating windows](plugins/miui-floating-windows/README.md) | Experimental. 7 host lifecycle tests and 4 agent tests passed. On HyperOS `OS3.0.303.0.WOPINXM`, remote `mmap` returned `MAP_FAILED`, the injector reported `MIUI_NO_AGENT`, and no override was applied. |
+| [Battery charge limit](plugins/battery-charge-limit/README.md) | Recovery fixes and host tests from Injector commit `8e1416f`. |
+| [CPU frequency control](plugins/cpu-control/README.md) | Recovery fixes and host tests from Injector commit `8e1416f`. |
+| [Animation speed](plugins/animation-speed/README.md) | Reviewed postboot source; physical qualification pending. |
+| [Display timeout](plugins/display-timeout/README.md) | Reviewed postboot source; physical qualification pending. |
+
+The new plugins declare boot reapplication and wait for previously authorized
+root. Installation remains disabled until explicitly enabled. Their copied
+READMEs and `package.py` describe the upstream standalone import packages.
+Catalog ZIPs instead use the root packager below and include README and NOTICE.
+No private artifacts, device logs or app build outputs belong in this repository.
 
 ## Rebuild and verify
 
-From the repository root, regenerate the catalog using `release.json` and the
-existing pinned payload. The Git clone must contain the declared source commit.
-The packager uses fixed ZIP metadata and uncompressed entries so that the same
-source and pinned payload produce identical bytes.
+The packager uses a fixed member allowlist, sorted names, fixed timestamps and
+permissions, and uncompressed ZIP entries to avoid compressor version effects.
+It never executes plugin hooks.
+
+Before source commit A, build only the active ZIPs:
 
 ```sh
-python3 package-catalog.py build
-python3 package-catalog.py verify
+python3 package-catalog.py packages
 ```
 
-Build regenerates `catalog.json` and reproduces all three ZIPs, preserving
-existing files when their bytes match. Both commands require the plugin source
-and package files to match the declared source commit, compare rebuilt ZIPs
-with the committed asset hashes, and check both MIUI payload hashes. Verify
-also compares the entire generated catalog with `catalog.json`. An optional
-`--frida-inject /path/to/frida-inject` argument to build supplies the exact
-pinned custom binary separately. The MIUI source directory carries the pinned
-native build recipe, JavaScript source and lockfile, patch, and supplied notices.
+Commit the reviewed source, packager, documentation and four active ZIPs as A,
+excluding root catalog/release pins. Then create a pending release pin with
+exactly `repository`, `commit`, `tag`, and `assets`: the repository is
+`https://github.com/SmallThingz/injector-plugins`, commit is A's full 40-character
+hash, tag is `plugins-20261122`, and assets maps each active ZIP name to its
+64-character SHA-256. Build and verify the separate candidate:
 
-## Publication
+```sh
+python3 package-catalog.py build --release .tmp/catalog-candidate/release.json --catalog .tmp/catalog-candidate/catalog.json
+python3 package-catalog.py verify --release .tmp/catalog-candidate/release.json --catalog .tmp/catalog-candidate/catalog.json
+```
 
-The [plugin release](https://github.com/SmallThingz/injector-plugins/releases/tag/plugins-20261121)
-contains the three declared ZIPs. Its tag resolves to source commit
-`48b04021202534b63fc58493ff71ba2291a4eac6`; GitHub's asset digests match the catalog.
-Injector stays at app version 0.1.0 without an app release.
+Both commands require all four release pins, the actual local source commit,
+source/package equality to that commit, committed ZIP hashes, and byte-identical
+source rebuilds. Verify also compares the generated catalog bytes. An existing
+local tag must resolve to A, including annotated-tag peeling. A missing tag is
+explicitly reported as pending; `--require-tag` makes it an error. These checks
+do not establish remote publication or physical behavior.
+
+## Catalog contract and parent publication
+
+Each catalog entry contains `name`, `description`, `icon`, and `release`.
+The release object requires `repository`, `commit`, `tag`, `asset`, `sha256`,
+and `manifestPath`. Consumers must resolve the remote tag to the source commit,
+fetch the manifest at that commit, verify the downloaded asset's SHA-256, and
+compare its root manifest with that pinned source manifest before import.
+
+After physical qualification, the parent must check the proposed tag and release
+are unused remotely, publish the four exact ZIPs from A under a new tag pointing
+to A, and verify the remote tag target and every downloaded asset digest.
+Never overwrite assets, force tags, or use release-upload clobber options.
+Then copy the verified candidate pins and catalog to the root, run
+`python3 package-catalog.py verify --require-tag`, and commit those two files as B.
+The immutable default catalog URL uses B's full commit hash; its pin is the
+SHA-256 of B's exact `catalog.json` bytes. Update the app pin only after verifying
+that public catalog and its release assets. Any source/package changes during
+qualification require a new source commit and regenerated pins before publication.

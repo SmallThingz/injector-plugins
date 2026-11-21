@@ -12,4 +12,4 @@ The current manifest has static groups and choices. The hook verifies group memb
 
 ## Host verification
 
-Run `python3 -B plugins/cpu-control/test_hooks.py` from the repository root. The 12 tests run the hook under `sh` with relocated kernel paths, simulated UID, and a temporary state directory. No phone writes were part of qualification. The repository root README covers packaging.
+Run `python3 -B plugins/cpu-control/test_hooks.py` from the repository root. The tests run the hook under `sh` with relocated kernel paths, simulated UID, and a temporary state directory. Physical qualification of this candidate is pending. The repository root README covers packaging.

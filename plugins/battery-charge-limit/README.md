@@ -8,7 +8,7 @@ The plugin uses a single battery's writable `charge_control_end_threshold` and, 
 
 The driver handles charging directly. The plugin starts no worker and performs no boot-time writes. If the firmware resets a threshold across reboot, the next hook reports that its saved values conflict with the device.
 
-From this directory, run the 17 host tests with the following command. No phone writes were part of qualification. The repository root README covers packaging.
+From this directory, run the host tests with the following command. Physical qualification of this candidate is pending. The repository root README covers packaging.
 
 ```sh
 python3 test_hooks.py

@@ -12,40 +12,25 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-MIUI = "miui-floating-windows"
 ARCHIVE_LIMIT = 128 * 1024 * 1024
 COMMON = ("plugin.json", "hook.sh", "README.md", "NOTICE.md")
 PACKAGE_FILES = {
     "battery-charge-limit": COMMON + ("thresholds.sh",),
     "cpu-control": COMMON,
-    MIUI: COMMON + (
-        "PROVENANCE.md",
-        "agent.js",
-        "agent-source/agent.js",
-        "agent-source/bun.lock",
-        "agent-source/limit.js",
-        "agent-source/limit.test.js",
-        "agent-source/package.json",
-        "build-injector.sh",
-        "licenses/LGPL-2.0.txt",
-        "licenses/bridge-exception.txt",
-        "licenses/efni.txt",
-        "licenses/frida-core.txt",
-        "licenses/frida-gum.txt",
-        "payload.sha256",
-        "policy-neutral.patch",
-        "worker.sh",
-    ),
+    "animation-speed": COMMON + ("settings-state.sh",),
+    "display-timeout": COMMON + ("settings-state.sh",),
 }
 CATALOG_DESCRIPTIONS = {
     "battery-charge-limit": "Set charge limits on supported devices. Device testing pending.",
     "cpu-control": "Control CPU governors and frequency ceilings. Device testing pending.",
-    MIUI: "Experimental. Not working on the tested HyperOS firmware.",
+    "animation-speed": "Adjust Android animation duration and reapply after restart while enabled. Device testing pending.",
+    "display-timeout": "Choose the idle screen timeout and reapply after restart while enabled. Device testing pending.",
 }
 CATALOG_ICONS = {
     "battery-charge-limit": "battery",
     "cpu-control": "cpu",
-    MIUI: "windows",
+    "animation-speed": "windows",
+    "display-timeout": "plugin",
 }
 
 
@@ -57,8 +42,8 @@ def package_path(plugin):
     return Path("packages") / f"{plugin}.zip"
 
 
-def release_pin():
-    pin = json.loads((ROOT / "release.json").read_text())
+def release_pin(path, require_tag=False):
+    pin = json.loads(path.read_text())
     if set(pin) != {"repository", "commit", "tag", "assets"}:
         raise ValueError("Expected repository, commit, tag and assets in release.json")
     if pin["repository"] != "https://github.com/SmallThingz/injector-plugins":
@@ -67,6 +52,7 @@ def release_pin():
         raise ValueError("Release commit must be a full Git commit hash")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", pin["tag"]):
         raise ValueError("Invalid release tag")
+    subprocess.run(["git", "check-ref-format", f"refs/tags/{pin['tag']}"], cwd=ROOT, check=True)
     if set(pin["assets"]) != {f"{plugin}.zip" for plugin in PACKAGE_FILES}:
         raise ValueError("Expected one release asset for each plugin")
     if any(not re.fullmatch(r"[a-f0-9]{64}", digest) for digest in pin["assets"].values()):
@@ -78,12 +64,14 @@ def release_pin():
     ).strip()
     if resolved != commit:
         raise ValueError("Release pin does not identify a commit")
+    paths = [str(path) for plugin in PACKAGE_FILES
+             for path in (Path("plugins") / plugin, package_path(plugin))]
     subprocess.run(
-        ["git", "diff", "--exit-code", commit, "--", "plugins", "packages"],
+        ["git", "diff", "--exit-code", commit, "--", *paths],
         cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
     )
     extra = subprocess.check_output(
-        ["git", "ls-files", "--others", "--exclude-standard", "--", "plugins", "packages"],
+        ["git", "ls-files", "--others", "--exclude-standard", "--", *paths],
         cwd=ROOT, text=True,
     )
     if extra:
@@ -92,24 +80,29 @@ def release_pin():
         committed = subprocess.check_output(["git", "show", f"{commit}:packages/{asset}"], cwd=ROOT)
         if sha256(committed) != digest:
             raise ValueError(f"Release hash differs from the source commit: {asset}")
+    tag = subprocess.run(
+        ["git", "rev-parse", "--verify", f"refs/tags/{pin['tag']}^{{commit}}"],
+        cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    tag_exists = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{pin['tag']}"], cwd=ROOT,
+    ).returncode == 0
+    if tag_exists and (tag.returncode != 0 or tag.stdout.strip() != commit):
+        raise ValueError("Release tag does not resolve to the source commit")
+    if tag.returncode != 0:
+        if require_tag:
+            raise ValueError("Release tag is missing locally")
+        print(f"PENDING: {pin['tag']} has no local tag; publication is not verified.")
     return pin
 
 
-def package(plugin, binary, pin):
+def package(plugin, pin=None):
     manifest_path = Path("plugins") / plugin / "plugin.json"
     source = (ROOT / manifest_path).parent
     members = {name: (source / name).read_bytes() for name in PACKAGE_FILES[plugin]}
     manifest = json.loads(members["plugin.json"])
     if manifest["id"] != plugin or any(hook not in members for hook in manifest["hooks"].values() if hook is not None):
         raise ValueError(f"Manifest ID or hooks do not match the package: {manifest_path}")
-    if plugin == MIUI:
-        members["frida-inject"] = binary
-        pins = dict(line.split()[::-1] for line in members["payload.sha256"].decode("ascii").splitlines())
-        if set(pins) != {"agent.js", "frida-inject"}:
-            raise ValueError("Expected pins for agent.js and frida-inject")
-        for name, digest in pins.items():
-            if sha256(members[name]) != digest:
-                raise ValueError(f"Payload SHA-256 mismatch: {name}")
 
     stream = io.BytesIO()
     # Stored ZIP entries avoid compressor version effects on the published hashes.
@@ -117,13 +110,14 @@ def package(plugin, binary, pin):
         for name, data in sorted(members.items()):
             entry = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
             entry.create_system = 3
-            mode = 0o100755 if name == "frida-inject" else 0o100644
-            entry.external_attr = mode << 16
+            entry.external_attr = 0o100644 << 16
             archive.writestr(entry, data)
     data = stream.getvalue()
     if len(data) > ARCHIVE_LIMIT:
         raise ValueError(f"Package exceeds Injector's archive limit: {plugin}")
     asset = f"{plugin}.zip"
+    if pin is None:
+        return data, None
     if sha256(data) != pin["assets"][asset]:
         raise ValueError(f"Rebuilt package differs from the pinned release: {asset}")
     catalog_entry = {
@@ -142,34 +136,35 @@ def package(plugin, binary, pin):
     return data, catalog_entry
 
 
-def packaged_binary():
-    with zipfile.ZipFile(ROOT / package_path(MIUI)) as archive:
-        if archive.getinfo("frida-inject").file_size > ARCHIVE_LIMIT:
-            raise ValueError("Packaged frida-inject exceeds Injector's archive limit")
-        return archive.read("frida-inject")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    build = commands.add_parser("build", help="rebuild catalog.json and all plugin ZIPs")
-    build.add_argument("--frida-inject", type=Path, help="pinned custom Android arm64 injector (defaults to the existing ZIP payload)")
-    commands.add_parser("verify", help="check the catalog and ZIPs against the source and payload pins")
+    commands.add_parser("packages", help="build only the four active ZIPs before committing their source")
+    for command in ("build", "verify"):
+        sub = commands.add_parser(command, help=f"{command} the four active ZIPs and pinned catalog")
+        sub.add_argument("--release", type=Path, default=ROOT / "release.json")
+        sub.add_argument("--catalog", type=Path, default=ROOT / "catalog.json")
+        sub.add_argument("--require-tag", action="store_true", help="require a matching local release tag (does not check publication)")
     args = parser.parse_args()
 
     try:
-        pin = release_pin()
-        binary = args.frida_inject.read_bytes() if args.command == "build" and args.frida_inject else packaged_binary()
+        pin = None if args.command == "packages" else release_pin(args.release, args.require_tag)
         outputs = {}
         entries = []
         for plugin in PACKAGE_FILES:
-            data, entry = package(plugin, binary, pin)
+            data, entry = package(plugin, pin)
             outputs[package_path(plugin)] = data
-            entries.append(entry)
-        catalog = {"name": "Injector", "description": "Official Injector plugin catalog.", "plugins": entries}
-        outputs[Path("catalog.json")] = (json.dumps(catalog, indent=2) + "\n").encode("utf-8")
+            if entry is not None:
+                entries.append(entry)
+        if pin is not None:
+            catalog = {"name": "Injector", "description": "Official Injector plugin catalog.", "plugins": entries}
+            catalog_path = args.catalog.resolve().relative_to(ROOT)
+            if ((ROOT / catalog_path) == args.release.resolve() or catalog_path == Path("release.json")
+                    or not catalog_path.parts or catalog_path.parts[0] in ("plugins", "packages", ".git")):
+                raise ValueError("Catalog output must not overwrite release pins, sources or packages")
+            outputs[catalog_path] = (json.dumps(catalog, indent=2) + "\n").encode("utf-8")
 
-        if args.command == "build":
+        if args.command != "verify":
             temporary = ROOT / ".tmp"
             temporary.mkdir(exist_ok=True)
             with tempfile.TemporaryDirectory(dir=temporary) as stage:
@@ -189,9 +184,9 @@ def main():
     except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError, zipfile.BadZipFile) as exc:
         parser.exit(1, f"{parser.prog}: {exc}\n")
 
-    for entry in entries:
-        release = entry["release"]
-        print(f"{release['sha256']}  packages/{release['asset']}")
+    for plugin in PACKAGE_FILES:
+        path = package_path(plugin)
+        print(f"{sha256(outputs[path])}  {path}")
 
 
 if __name__ == "__main__":

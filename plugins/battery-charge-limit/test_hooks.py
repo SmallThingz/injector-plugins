@@ -16,11 +16,23 @@ set -eu
 umask 077
 . "$1"
 
+mv() {
+    command mv "$@" || return 1
+    if [ -n "${rejected_end-}" ]; then
+        printf '70\n' > "$rejected_end"
+        unset rejected_end
+    fi
+}
+
 write_threshold() {
     printf '%s %s\n' "${1##*/}" "$2" >> "$TEST_WRITES"
     case "${TEST_DRIVER:-}" in
         reject-start)
             if [ "${1##*/}" = charge_control_start_threshold ]; then return 1; fi
+            ;;
+        reject-end-then-external-change)
+            rejected_end=$1
+            return 1
             ;;
         reject-end-zero)
             if [ "${1##*/}" = charge_control_end_threshold ] && [ "$2" = 0 ]; then return 1; fi
@@ -249,6 +261,19 @@ class BatteryChargeLimitTest(unittest.TestCase):
         self.assertIn('previous thresholds are verified', self.hook('enable', driver='reject-start', code=1))
         self.values(0, 0)
         self.wrote(('end', 80), ('start', 75), ('end', 0))
+        self.assertFalse(self.journal.exists())
+
+    def test_rejected_apply_rechecks_noop_rollback_before_discarding_journal(self):
+        output = self.hook('enable', driver='reject-end-then-external-change', code=1)
+        self.assertIn('The thresholds changed externally', output)
+        self.values(0, 70)
+        self.wrote(('end', 80))
+        self.assertTrue(self.journal.exists())
+        self.assertIn('The thresholds changed externally', self.hook('disable', code=1))
+        self.wrote()
+        self.end.write_text('0\n')
+        self.hook('disable')
+        self.wrote()
         self.assertFalse(self.journal.exists())
 
     def test_driver_rounding_or_failed_write_with_effect_retains_pending_receipt(self):
