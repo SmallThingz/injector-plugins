@@ -6,14 +6,13 @@ description, icon and pinned GitHub plugin release.
 
 The plugin sources and ZIPs belong to commit
 `48b04021202534b63fc58493ff71ba2291a4eac6`. `release.json` declares that source
-commit, the planned tag `plugins-20261121`, and each asset's SHA-256. The new
+commit, the tag `plugins-20261121`, and each asset's SHA-256. The new
 catalog is committed separately so its release records can refer to the
 existing source commit without a circular commit reference.
 
-The app's immutable default catalog URL should use the full commit that
-contains this new catalog, in the form
-`https://raw.githubusercontent.com/SmallThingz/injector-plugins/<catalog-commit>/catalog.json`.
-That catalog commit is available after these changes are committed.
+The app's immutable default catalog is
+`https://raw.githubusercontent.com/SmallThingz/injector-plugins/4b1fc9e8cd4130a7ad374633712cf9584cf6d1e5/catalog.json`,
+with SHA-256 `0d3afbaa9702e79654aea2034ca9c6f56bb6935e3a83c64c14feafefbad38969`.
 
 ## Catalog schema
 
@@ -79,8 +78,7 @@ native build recipe, JavaScript source and lockfile, patch, and supplied notices
 
 ## Publication
 
-After review, publish the plugin release under `plugins-20261121` with its tag
-resolving to the source commit above and upload the three ZIPs under their
-declared asset names. Commit the new catalog and configure the app's default
-catalog URL with that full catalog commit. The tag and plugin release are
-pending publication. Injector stays at app version 0.1 without an app release.
+The [plugin release](https://github.com/SmallThingz/injector-plugins/releases/tag/plugins-20261121)
+contains the three declared ZIPs. Its tag resolves to source commit
+`48b04021202534b63fc58493ff71ba2291a4eac6`; GitHub's asset digests match the catalog.
+Injector stays at app version 0.1.0 without an app release.
