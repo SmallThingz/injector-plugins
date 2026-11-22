@@ -21,7 +21,7 @@
       "icon": "cpu",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "b8afa1e5d76de919d20b14d1a30e90712796df2f",
+        "commit": "7e10b84d05002e04aaef7ad62d29c2d313ce9775",
         "tag": "plugins-20261122-controls-1",
         "asset": "cpu-control.zip",
         "sha256": "097edc066796e74dce2a16d0d886af84ab88d38224e050ea9f9057fde680f16f",
@@ -30,14 +30,14 @@
     },
     {
       "name": "Caffeine",
-      "description": "Timed or untimed screen-awake sessions across apps.",
+      "description": "Keep the screen awake across apps for 15 or 30 minutes.",
       "icon": "plugin",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "b8afa1e5d76de919d20b14d1a30e90712796df2f",
+        "commit": "7e10b84d05002e04aaef7ad62d29c2d313ce9775",
         "tag": "plugins-20261122-controls-1",
         "asset": "caffeine.zip",
-        "sha256": "2e0dba16c93e31297a6af8ed0c9ce594be3f6b6fd281322f9da03125464f2aac",
+        "sha256": "7f217553cfcb33396ef6c27c13e996a7a6887cfa42bfb6ab897245c2b52532c0",
         "manifestPath": "plugins/caffeine/plugin.json"
       }
     }
