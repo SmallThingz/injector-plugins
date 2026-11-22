@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "a1ee92c6159004c81159c599486d887c45e0e11f",
+  "tag": "plugins-20261122-controls-2",
+  "assets": {
+    "battery-charge-limit.zip": "72b37ffd425140011644f35d9ad1ec8cd9415743fcb6caabffa01b0a3112d4e2",
+    "cpu-control.zip": "183404e14aeec54e48d82df273e4ccfd12c8a16d9d45331358419f4bfcde281b",
+    "caffeine.zip": "fe6011db53fcffac91c3a0cf4f75ce01d3c06030f944c8812f5f459afae4094d"
+  }
+}
