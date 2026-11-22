@@ -13,6 +13,13 @@ import java.util.UUID;
 public final class ActivityLists implements Txn.IO {
     private static final String FIRMWARE =
             "Redmi/amethyst_in/amethyst:16/BP2A.250605.031.A3/OS3.0.303.0.WOPINXM:user/release-keys";
+    private static final long STARTED = System.nanoTime();
+
+    private static void stage(String message) {
+        long elapsedMs = (System.nanoTime() - STARTED) / 1_000_000;
+        System.err.println("MIUI stage: " + message + " elapsed_ms=" + elapsedMs);
+    }
+
     private final Object service;
     private final Class<?> api;
     private int inventoryUser = -1;
@@ -55,6 +62,7 @@ public final class ActivityLists implements Txn.IO {
         } catch (Exception beforeDispatch) {
             throw new Txn.WriteRejectedException("Setter was not dispatched", beforeDispatch);
         }
+        stage("dispatch " + field + " entries=" + value.size());
         setter.invoke(service, value);
     }
 
@@ -100,10 +108,10 @@ public final class ActivityLists implements Txn.IO {
             return;
         }
         if (event.equals("disable")) {
-            System.err.println("MIUI stage: restore started");
+            stage("restore started");
             Txn.run(state, boot, "disable", Collections.emptyList(), controller);
             Files.deleteIfExists(state.resolve("activity-package-sequence"));
-            System.err.println("MIUI stage: restore verified");
+            stage("restore verified");
             return;
         }
         boolean refresh = event.equals("interval") || event.equals("boot") || event.equals("run");
@@ -117,8 +125,8 @@ public final class ActivityLists implements Txn.IO {
     private void applyInventory(String event, Path state, String updateId, String boot) throws Exception {
         inventoryUser = Inventory.currentUser();
         PackageChanges changes = new PackageChanges(state, boot, inventoryUser);
-        boolean changed = changes.observe();
-        if (event.equals("interval") && !changed) {
+        boolean interval = event.equals("interval");
+        if (interval && !changes.observe()) {
             try {
                 Txn.checkActive(state, boot, this);
                 checkUser();
@@ -128,20 +136,30 @@ public final class ActivityLists implements Txn.IO {
             }
         }
         boolean inspecting = event.equals("inspect-inventory");
-        if (!inspecting) System.err.println("MIUI stage: inventory started");
-        List<String> names = Inventory.classes(inventoryUser);
-        if (names.isEmpty()) throw new IOException("Empty current-user activity inventory");
-        checkUser();
+        Txn.InventorySource inventory = () -> {
+            if (!inspecting) stage("inventory started");
+            if (!interval) changes.observe();
+            List<String> names = Inventory.classes(inventoryUser);
+            if (names.isEmpty()) throw new IOException("Empty current-user activity inventory");
+            checkUser();
+            if (!inspecting) stage("inventory complete entries=" + names.size());
+            return names;
+        };
         if (inspecting) {
-            inspectInventory(names);
+            inspectInventory(inventory.classes());
             return;
         }
-        System.err.println("MIUI stage: applying verified inventory");
-        if (event.equals("configure")) Txn.configure(state, boot, updateId, names, this);
-        else Txn.run(state, boot, "enable", names, this);
+        int count;
+        if (event.equals("configure")) {
+            List<String> names = inventory.classes();
+            Txn.configure(state, boot, updateId, names, this);
+            count = names.size();
+        } else {
+            count = Txn.runWithInventory(state, boot, "enable", inventory, this);
+        }
         checkUser();
         changes.record();
-        System.out.println("Verified both lists for " + names.size() + " declared activity classes");
+        System.out.println("Verified both lists for " + count + " declared activity classes");
     }
 
     public static void main(String[] args) throws Exception {
@@ -150,6 +168,10 @@ public final class ActivityLists implements Txn.IO {
         String boot = new String(Files.readAllBytes(Paths.get("/proc/sys/kernel/random/boot_id")),
                 StandardCharsets.US_ASCII).trim();
         if (!UUID.fromString(boot).toString().equals(boot)) throw new IOException("Boot identity missing");
+        if (!args[0].startsWith("inspect-")) {
+            stage("worker " + args[0] + " pid=" + android.os.Process.myPid()
+                    + " boot_ms=" + android.os.SystemClock.elapsedRealtime());
+        }
         ActivityLists bridge = new ActivityLists();
         execute(args[0], Paths.get(args[1]), args[2], boot, bridge, bridge::applyInventory);
     }

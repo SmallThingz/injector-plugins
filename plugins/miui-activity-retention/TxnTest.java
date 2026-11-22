@@ -560,6 +560,43 @@ public final class TxnTest {
         expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
     }
 
+    private static void pendingEnableSkipsInventory(Path root) throws Exception {
+        Host h = new Host(root, "pending-enable-inventory");
+        h.oldPendingDisable();
+        Path journal = h.dir.resolve(JOURNAL);
+        Path migration = h.dir.resolve(UPDATE);
+        byte[] before = Files.readAllBytes(journal);
+        byte[] marker = Files.readAllBytes(migration);
+        int reads = h.reads;
+        int attempts = h.attempts;
+        for (int request = 0; request < 2; request++) {
+            try {
+                Txn.runWithInventory(h.dir, BOOT, "enable", () -> {
+                    throw new AssertionError("Pending Enable enumerated installed packages");
+                }, h);
+                throw new AssertionError("Pending Enable was admitted");
+            } catch (IOException refused) {
+                expect("A previous write is unresolved", refused.getMessage());
+            }
+        }
+        expect(reads, h.reads);
+        expect(attempts, h.attempts);
+        sameBytes(before, Files.readAllBytes(journal));
+        sameBytes(marker, Files.readAllBytes(migration));
+
+        Host fresh = new Host(root, "fresh-enable-inventory");
+        List<String> names = Collections.singletonList("installed.Activity");
+        int[] scans = {0};
+        Txn.InventorySource inventory = () -> { scans[0]++; return names; };
+        expect(1, Txn.runWithInventory(fresh.dir, BOOT, "enable", inventory, fresh));
+        int writes = fresh.attempts;
+        expect(2, writes);
+        expect(1, Txn.runWithInventory(fresh.dir, BOOT, "enable", inventory, fresh));
+        expect(2, scans[0]);
+        expect(writes, fresh.attempts);
+        expectReadOnlyProof(fresh, "ACTIVE");
+    }
+
     private static void legacyQueuedRestore(Path root) throws Exception {
         Host h = new Host(root, "legacy-queued-restore");
         h.oldPendingDisable();
@@ -718,6 +755,7 @@ public final class TxnTest {
         lifecycleProofAndRepeatCycles(root);
         inspectPartialRestore(root);
         legacyQueuedRestore(root);
+        pendingEnableSkipsInventory(root);
         interruptedOrdinaryWrites(root);
         queuedPendingPreimage(root);
         interruptedDisableAdmission(root);

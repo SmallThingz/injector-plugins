@@ -304,10 +304,18 @@ public final class Txn {
     }
 
     public static void run(Path dir, String boot, String event, List<String> declaredClasses, IO io) throws Exception {
+        runWithInventory(dir, boot, event, () -> declaredClasses, io);
+    }
+
+    interface InventorySource {
+        List<String> classes() throws Exception;
+    }
+
+    static int runWithInventory(Path dir, String boot, String event, InventorySource inventory, IO io)
+            throws Exception {
         identity(boot, false);
         boolean enable = "enable".equals(event);
         if (!enable && !"disable".equals(event)) throw new IllegalArgumentException("Unknown event");
-        Set<String> desired = enable ? classes(declaredClasses) : Collections.emptySet();
         Path journal = dir.resolve(JOURNAL);
         Active state = null;
         if (!Files.notExists(journal)) {
@@ -316,7 +324,7 @@ public final class Txn {
             state = readActive(bytes);
         }
         Update migration = requireCommittedUpdate(dir, state);
-        if (state == null && !enable) return;
+        if (state == null && !enable) return 0;
         boolean sameBoot = state != null && boot.equals(state.boot);
         if (sameBoot && state.pending && state.write == null) {
             if (enable || migration == null || !boot.equals(migration.boot)
@@ -325,15 +333,18 @@ public final class Txn {
                 throw new IOException("A previous write is unresolved");
             }
             reconcilePendingDisable(journal, state, io);
-            return;
+            return 0;
         }
+        // A same-boot legacy pending write already rules out Enable, regardless of installed apps.
+        List<String> declared = enable ? inventory.classes() : Collections.emptyList();
+        Set<String> desired = classes(declared);
         String updateId = state == null ? "" : state.updateId;
         boolean wasEnabled = state != null && state.enabled;
         List<List<String>> current = stableSnapshot(io);
         if (!sameBoot && !enable) {
             // Ownership is boot-local. An old journal conveys no ownership over a new boot's lists.
             saveActive(journal, new Active(boot, updateId, current, emptyPair(), false, false, false));
-            return;
+            return 0;
         }
 
         if (!sameBoot) state = new Active(boot, updateId, current, emptyPair(), false, wasEnabled, false);
@@ -370,6 +381,7 @@ public final class Txn {
                 || !saved.owned.equals(target.owned)) {
             saveActive(journal, target);
         }
+        return declared.size();
     }
 
     private static void requirePartialRestore(Active active) throws IOException {
