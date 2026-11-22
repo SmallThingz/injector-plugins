@@ -8,7 +8,7 @@
     "battery-charge-limit": {
       "version": "0.1.0",
       "manifest_path": "plugins/battery-charge-limit/plugin.json",
-      "proposed_tag": "plugins-20261123-native-010-1",
+      "proposed_tag": "plugins-20261123-native-010-2",
       "source_files": {
         "plugins/battery-charge-limit/plugin.json": {
           "upstream_path": "plugins/native-charge/plugin.json",
@@ -32,15 +32,15 @@
         },
         "plugins/battery-charge-limit/native/src/main.rs": {
           "upstream_path": "plugins/native-charge/src/main.rs",
-          "sha256": "53a282cf20a02ccd1f5c46b5d59ea4da28bc8e79a6a72cad686eaefded830774"
+          "sha256": "942381b312a3596f8e5464b8008c0aa5b9534239ca231270492e42a478a5c579"
         },
         "plugins/battery-charge-limit/native/src/monitor.rs": {
           "upstream_path": "plugins/native-charge/src/monitor.rs",
-          "sha256": "578a792b536b10b6596ad581629cc3496631dcedac884ed8a89388cc1a554a57"
+          "sha256": "4130040643cd5128013e21bc6d48916c53b2c87b869b6adbc600d94f0e1d41c4"
         },
         "plugins/battery-charge-limit/native/src/threshold.rs": {
           "upstream_path": "plugins/native-charge/src/threshold.rs",
-          "sha256": "f9cd7b9d5323c4754d3c004d59fa80a08399cf2839bc40588bdb2cd476679b9f"
+          "sha256": "fbe503abb5e7ce6a53e34799180ba5656eee46318e13b6b397b4a4ce8afa7a2b"
         },
         "plugins/battery-charge-limit/native/.gitignore": {
           "upstream_path": "plugins/native-charge/.gitignore",
@@ -49,27 +49,29 @@
       },
       "worker": {
         "path": "plugins/battery-charge-limit/native-charge",
-        "bytes": 348616,
-        "sha256": "f2fc24c7b3c88d04a4cc8e446f1dc95984296d6d8b1f8046501f39b39e84a3a8",
-        "built_from_injector_commit": "2be0d3852bfa47acb68cb20df8715816bb4aec5d",
+        "bytes": 350600,
+        "sha256": "2bf23170fa7962b46b79053bfe48d31d7ab37b845d329bb91982f32f9734fbcb",
         "build_inputs_match_current": true,
         "abi": "arm64-v8a",
         "android_api": 28,
         "interpreter": "/system/bin/linker64",
         "toolchain": "rustc 1.99.1, Cargo 1.99.1, Android NDK 29.0.14206865",
-        "rebuilt_for_this_candidate": false
+        "rebuilt_for_this_candidate": true,
+        "built_from_plugins_commit": "d09e2a1b98182aa32edfb50fdbafc4129bf31037"
       },
       "members": [
         "NOTICE.md",
         "native-charge",
         "plugin.json"
       ],
-      "qualification": "Candidate packaging only; no device validation, installation or publication performed in this lane."
+      "qualification": "Android arm64 build passed; source regression tests passed. This worker has not yet been installed or physically qualified.",
+      "source_repository": "https://github.com/SmallThingz/injector-plugins",
+      "source_commit": "d09e2a1b98182aa32edfb50fdbafc4129bf31037"
     },
     "cpu-control": {
       "version": "0.1.0",
       "manifest_path": "plugins/cpu-control/plugin.json",
-      "proposed_tag": "plugins-20261123-native-010-1",
+      "proposed_tag": "plugins-20261123-native-010-2",
       "source_files": {
         "plugins/cpu-control/plugin.json": {
           "upstream_path": "plugins/cpu-control/plugin.json",
@@ -97,7 +99,7 @@
         },
         "plugins/cpu-control/native/src/transaction.rs": {
           "upstream_path": "plugins/native-power/src/transaction.rs",
-          "sha256": "085ac719912f22aa16dbfabdaafac2fe2832ad481d7f5027cd9c5f8884de2f5c"
+          "sha256": "0b6c88044327359caaecf024e70d430ff4171742eddda80671efee4628d2c452"
         },
         "plugins/cpu-control/native/.gitignore": {
           "upstream_path": "plugins/native-power/.gitignore",
@@ -106,22 +108,24 @@
       },
       "worker": {
         "path": "plugins/cpu-control/native-power",
-        "bytes": 365248,
-        "sha256": "579db2c98c61ca1524256a48902d4ea73e71f0d804045177ff1fb8a85cf012f7",
-        "built_from_injector_commit": "8c8c849f62900e97b3844cf8f0e3f7e4c7142dcb",
+        "bytes": 365184,
+        "sha256": "2dbd5bc45bf8e3bfc24c5722bf6ace2cb26cf0a65ed8046c598315a2fda8fabd",
         "build_inputs_match_current": true,
         "abi": "arm64-v8a",
         "android_api": 28,
         "interpreter": "/system/bin/linker64",
         "toolchain": "rustc 1.99.1, Cargo 1.99.1, Android NDK 29.0.14206865",
-        "rebuilt_for_this_candidate": false
+        "rebuilt_for_this_candidate": true,
+        "built_from_plugins_commit": "d09e2a1b98182aa32edfb50fdbafc4129bf31037"
       },
       "members": [
         "NOTICE.md",
         "native-power",
         "plugin.json"
       ],
-      "qualification": "Candidate packaging only; no device validation, installation or publication performed in this lane."
+      "qualification": "Android arm64 build passed; source regression tests passed. This worker has not yet been installed or physically qualified.",
+      "source_repository": "https://github.com/SmallThingz/injector-plugins",
+      "source_commit": "d09e2a1b98182aa32edfb50fdbafc4129bf31037"
     },
     "caffeine": {
       "version": "0.1.0",
