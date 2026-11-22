@@ -246,6 +246,20 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "JAR checksum"):
             pack.package(plugin)
 
+    def test_universal_retention_manifest_authority(self):
+        plugin = "miui-activity-retention"
+        rel = Path("plugins", plugin, "plugin.json")
+        self.write(rel, (ROOT / rel).read_bytes())
+        data, _ = pack.package(plugin)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            manifest = json.loads(archive.read("plugin.json"))
+        self.assertFalse(manifest["ui"].get("inputs"))
+        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["triggers"], {"boot": True, "intervalMinutes": 15})
+        self.change_manifest(plugin, lambda value: value["triggers"].update(waitForRoot=True))
+        with self.assertRaisesRegex(ValueError, "refresh triggers"):
+            pack.package(plugin)
+
     def test_missing_helper_and_late_descriptor_failure_write_nothing(self):
         helper = self.repo / "plugins/battery-charge-limit/session.sh"
         helper.unlink()
