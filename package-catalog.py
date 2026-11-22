@@ -213,7 +213,11 @@ def native_archive(plugin, root, members):
         mapping[str(base / "plugin.json")] = f"plugins/{upstream}/plugin.json"
     else:
         mapping = {str(base / name): str(base / name) for name in members}
-    if {path: source["upstream_path"] for path, source in record["source_files"].items()} != mapping:
+    source_files = record["source_files"]
+    for path in source_files.keys() - mapping.keys():
+        if not worker or not Path(path).is_relative_to(base / "native"):
+            raise ValueError("Candidate source mapping escapes plugin sources")
+    if any(source_files.get(path, {}).get("upstream_path") != upstream for path, upstream in mapping.items()):
         raise ValueError("Candidate source mapping differs from worker inputs")
     with tempfile.TemporaryDirectory() as stage:
         output = Path(stage) / "candidate.zip"

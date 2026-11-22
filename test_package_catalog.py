@@ -288,6 +288,34 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "provenance differs"):
             pack.release_pin(self.pin_path)
 
+    def test_rebuilt_workers_follow_new_candidate_provenance(self):
+        metadata = self.repo / "native-candidates.json"
+        provenance = json.loads(metadata.read_bytes())
+        for plugin, name in pack.WORKERS.items():
+            base = Path("plugins", plugin)
+            src = base / "native/src/main.rs"
+            source = (self.repo / src).read_bytes() + b"\n// fixture revision\n"
+            self.write(src, source)
+            # Distinct same-size fixture bytes preserve ELF headers and interpreter.
+            worker = bytearray((self.repo / base / name).read_bytes())
+            worker[-1] ^= 1
+            self.write(base / name, worker)
+            with self.assertRaises(ValueError):
+                pack.package(plugin)
+            record = provenance["packages"][plugin]
+            record.update(source_repository="SmallThingz/injector-plugins", source_commit=self.a)
+            record["source_files"][str(src)]["sha256"] = pack.sha256(source)
+            notes = base / "native/README.md"
+            self.write(notes, "Revision notes")
+            record["source_files"][str(notes)] = {"sha256": pack.sha256(b"Revision notes")}
+            record["worker"].update(built_from_plugins_commit=self.a, sha256=pack.sha256(worker))
+            metadata.write_bytes(pack.encoded(provenance))
+            data, _ = pack.package(plugin)
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                self.assertEqual(archive.read(name), bytes(worker))
+            self.assertNotEqual(pack.sha256(data), self.pin["assets"][plugin + ".zip"])
+        self.assertEqual(pack.sha256(pack.package("caffeine")[0]), self.pin["assets"]["caffeine.zip"])
+
     def test_source_and_worker_mapping(self):
         metadata = self.repo / "native-candidates.json"
         original = json.loads(metadata.read_bytes())
