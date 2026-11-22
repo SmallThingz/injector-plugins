@@ -4,27 +4,27 @@
   "plugins": [
     {
       "name": "Battery charge limit",
-      "description": "Requires a supported charge controller.",
+      "description": "Native charge window for the supported amethyst firmware.",
       "icon": "battery",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "a1ee92c6159004c81159c599486d887c45e0e11f",
-        "tag": "plugins-20261122-controls-2",
+        "commit": "8534fd6452c245219c64047d0547eb85549691e2",
+        "tag": "plugins-20261122-native-controls-1",
         "asset": "battery-charge-limit.zip",
-        "sha256": "72b37ffd425140011644f35d9ad1ec8cd9415743fcb6caabffa01b0a3112d4e2",
+        "sha256": "a8a3283dd77b5ad964abfa6601c2afdb5f4e1323374bb12af1686c7f28e662f5",
         "manifestPath": "plugins/battery-charge-limit/plugin.json"
       }
     },
     {
       "name": "CPU frequency control",
-      "description": "Per-policy frequency limits, governors and live monitoring on amethyst OS3.0.303.",
+      "description": "For amethyst on HyperOS OS3.0.303.0.WOPINXM. Current system frequency limits can prevent applying the efficiency-core ceiling.",
       "icon": "cpu",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "a1ee92c6159004c81159c599486d887c45e0e11f",
-        "tag": "plugins-20261122-controls-2",
+        "commit": "8534fd6452c245219c64047d0547eb85549691e2",
+        "tag": "plugins-20261122-native-controls-1",
         "asset": "cpu-control.zip",
-        "sha256": "183404e14aeec54e48d82df273e4ccfd12c8a16d9d45331358419f4bfcde281b",
+        "sha256": "f1013165a547d7e34b2e08dacd71c84dab7a5e66e57bf1526596074af3eb0016",
         "manifestPath": "plugins/cpu-control/plugin.json"
       }
     },

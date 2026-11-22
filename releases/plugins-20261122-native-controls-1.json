@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "8534fd6452c245219c64047d0547eb85549691e2",
+  "tag": "plugins-20261122-native-controls-1",
+  "assets": {
+    "battery-charge-limit.zip": "a8a3283dd77b5ad964abfa6601c2afdb5f4e1323374bb12af1686c7f28e662f5",
+    "cpu-control.zip": "f1013165a547d7e34b2e08dacd71c84dab7a5e66e57bf1526596074af3eb0016"
+  }
+}
