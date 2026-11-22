@@ -511,9 +511,78 @@ public final class TxnTest {
         expect(calls, h.calls);
         sameBytes(pending, Files.readAllBytes(journal));
         sameBytes(migration, Files.readAllBytes(marker));
+
+        h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
+        h.values.put(SHOW, new ArrayList<>(BASE_SHOW));
+        refused(() -> h.enable(BOOT, DECLARED));
+        h.disable(BOOT);
+        expect(calls, h.calls);
+        expectReadOnlyProof(h, "INACTIVE");
+        byte[] inactive = Files.readAllBytes(journal);
+        h.disable(BOOT);
+        expect(calls, h.calls);
+        sameBytes(inactive, Files.readAllBytes(journal));
+        sameBytes(migration, Files.readAllBytes(marker));
+        h.enable(BOOT, DECLARED);
+        expectReadOnlyProof(h, "ACTIVE");
+        h.disable(BOOT);
+        expectReadOnlyProof(h, "INACTIVE");
+        expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
+    }
+
+    private static void reconcileOwnedEntries(Path root, boolean loseReply) throws Exception {
+        Host h = new Host(root, loseReply ? "partial-restore-lost" : "partial-restore-owned");
+        h.legacy(BOOT, 3, 0, true);
+        h.configure();
+        h.unknownBeforeOn = h.attempts + 2;
+        refused(() -> h.disable(BOOT));
+        Path journal = h.dir.resolve(JOURNAL);
+        Path marker = h.dir.resolve(UPDATE);
+        byte[] pending = Files.readAllBytes(journal);
+        byte[] migration = Files.readAllBytes(marker);
+        int attempts = h.attempts;
+
+        h.values.get(HIDE).add("new.A");
+        refused(() -> h.disable(BOOT));
+        expect(attempts, h.attempts);
+        sameBytes(pending, Files.readAllBytes(journal));
+        h.values.get(HIDE).remove(h.values.get(HIDE).size() - 1);
+
+        List<String> externalHide = new ArrayList<>(BASE_HIDE);
+        externalHide.add(0, "foreign.Hide");
+        h.values.get(HIDE).add(0, "foreign.Hide");
+        h.values.get(SHOW).add("foreign.Show");
+        List<List<String>> target = Arrays.asList(externalHide, new ArrayList<>(h.values.get(SHOW)));
+        h.failPreflight = HIDE;
+        refused(() -> h.disable(BOOT));
+        expect(attempts, h.attempts);
+        sameBytes(pending, Files.readAllBytes(journal));
+        h.failPreflight = null;
+
+        h.calls.clear();
+        if (loseReply) {
+            h.loseReplyOn = h.writes + 1;
+            refused(() -> h.disable(BOOT));
+            refused(() -> Txn.inspectState(h.dir, BOOT, h));
+        } else {
+            h.disable(BOOT);
+            expectReadOnlyProof(h, "INACTIVE");
+        }
+        expect(Arrays.asList("preflight hide_self", "set hide_self"), h.calls);
+        expect(target, h.pair());
+        h.calls.clear();
+        h.disable(BOOT);
+        expect(Collections.emptyList(), h.calls);
+        expectReadOnlyProof(h, "INACTIVE");
+        sameBytes(migration, Files.readAllBytes(marker));
+        h.enable(BOOT, DECLARED);
+        h.disable(BOOT);
+        expectReadOnlyProof(h, "INACTIVE");
+        expect(target, h.pair());
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length != 1) throw new IllegalArgumentException("TxnTest requires an empty scratch directory");
         Path root = Paths.get(args[0]);
         exactCutoverAndRefresh(root);
         refusedLegacyAndPreflight(root);
@@ -522,6 +591,8 @@ public final class TxnTest {
         refreshConflictsAndBoot(root);
         lifecycleProofAndRepeatCycles(root);
         inspectPartialRestore(root);
+        reconcileOwnedEntries(root, false);
+        reconcileOwnedEntries(root, true);
         System.out.println("TxnTest passed");
     }
 }

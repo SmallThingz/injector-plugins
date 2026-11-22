@@ -24,7 +24,13 @@ MIUI_RECOVERY_OBSERVED <challenge> <boot> <CHECKPOINT|TARGET|DIVERGED> <journal-
 
 Both matching images are observations. TARGET is the checkpoint with only recorded owned entries removed, preserving the order of all other entries. Pair digests use the journal's ordered, length-prefixed UTF-16 list encoding. The pending journal does not encode which setter was outstanding. A matching target or checkpoint therefore leaves the old dispatch status unresolved.
 
-For a reviewed code-only Update, set `INJECTOR_EVENT=inspect-update`, `INJECTOR_RECOVERY_HANDOFF=1` and an exact fresh lowercase UUID in `INJECTOR_UPDATE_ID`. This selects the same FD9 read-only path. It will print exactly `REPAIRABLE <UUID>\n` if the current boot and migration match, the enabled pending journal has the observed partial-restore shape (owned HIDE remains, SHOW ownership is empty), and the stable live pair equals CHECKPOINT or TARGET. Divergence and unstable reads fail. The candidate's predecessor pin is the published universal ZIP above. With an approved host code-only handoff, preserve the installation state lineage and approval, suppress refresh, and preserve all historical receipts. `REPAIRABLE` supplies no setter or journal-finalization admission. A later explicit Disable still needs independently proved settlement of the old one-way dispatch and fresh readback. The candidate's normal Disable continues to reject pending journals.
+For a reviewed code-only Update, set `INJECTOR_EVENT=inspect-update`, `INJECTOR_RECOVERY_HANDOFF=1` and an exact fresh lowercase UUID in `INJECTOR_UPDATE_ID`. This selects the same FD9 read-only path. It will print exactly `REPAIRABLE <UUID>\n` if the current boot and migration match, the enabled pending journal has the observed partial-restore shape (HIDE has saved ownership, SHOW ownership is empty), and the stable live pair equals CHECKPOINT or TARGET. Divergence and unstable reads fail this inspection. The candidate's predecessor pin is the published universal ZIP above. With an approved host code-only handoff, preserve the state lineage, approval and all historical receipts, and suppress refresh.
+
+## Fresh explicit Disable
+
+Under FD9 the Disable hook checks the same-boot migration and pending restore shape again and obtains two matching current pairs. It builds the inactive image by subtracting only journal-owned HIDE entries from the live list. It preserves the order and multiplicity of other HIDE entries and all SHOW entries. Duplicate occurrences of an owned entry are ambiguous and fail. If all owned entries are already absent, the hook confirms the inactive image with a fresh double read and saves it with empty ownership and no setter. Otherwise it saves the new pending checkpoint, rechecks the observed pair, dispatches at most one HIDE setter and confirms both lists before committing the inactive journal. Failed or uncertain dispatch, unstable reads, or failed verification cannot return success. Enable and scheduled refresh still refuse the pending same-boot state. Once the fresh Disable succeeds, a later explicit Enable takes its baseline from current values.
+
+The reviewed vendor Binder setters are one-way. The service delegates to an adapter that replaces each list under its own monitor, and its synchronous getters can observe a list before a queued setter runs. The hook uses bounded post-dispatch read-back and stops on observed drift. The vendor API provides whole-list replacement with no compare-and-set. This preserves observed external entries without guaranteeing isolation from a concurrent writer between the final check and the setter. The saved inactive image and the success of this fresh Disable are current-state evidence. Historical Enable/Disable receipts retain their original outcomes.
 
 ## Handoff and timing
 
@@ -32,9 +38,19 @@ The host binds a fresh challenge to the exact candidate payload, original instal
 
 Mutating paths now report whether they reached worker start, inventory, apply, or restore. These markers locate a last observed phase; they cannot identify the killer. `read-ms` measures the Java inspection itself, including its journal and controller checks, and excludes staging, shell guards and process startup. Record total monotonic invocation time separately if measuring on an authorized device. No handset comparison or language speedup is claimed. Java keeps the existing named framework bridge. There is no Rust port of this bridge in this change.
 
-`TxnTest` adds source fixtures for read-only ACTIVE/INACTIVE proof across two apply/restore cycles, migration compatibility, missing/stale/drifted state and a lost acknowledgement leaving pending bytes unchanged. It also exercises CHECKPOINT, TARGET, and DIVERGED without setters or journal changes. The tracked release JAR and checksum remain the released bytes. This source change requires a separately authorized build and independent verification before delivery.
+`TxnTest` exercises read-only ACTIVE/INACTIVE proof across repeated apply/restore cycles, compatibility with the migrated journal, and refusal of missing, stale or drifted state. It checks that CHECKPOINT, TARGET and DIVERGED inspection leave both journals unchanged. Recovery fixtures cover lost reply after the setter applied, a partial checkpoint with owned entries still present, duplicate owned entries, a rejected preflight, preservation of external values and a fresh Disable that succeeds without a setter. The tracked release JAR and checksum remain the released bytes. This source change requires a separately authorized build and independent verification before delivery.
 
 ## Small review build
+
+From this plugin directory, run the focused pure Java journal fixture with an isolated output and a new empty journal directory:
+
+```sh
+set -eu
+out=$(mktemp -d "${TMPDIR:-/tmp}/miui-txn.XXXXXXXX")
+mkdir "$out/classes" "$out/journal"
+javac --release 8 -d "$out/classes" Txn.java TxnTest.java
+java -cp "$out/classes" TxnTest "$out/journal"
+```
 
 From this plugin directory in the isolated source worktree, an authorized owner can build just the bridge with the existing Android SDK. The commands only create an ignored scratch output directory. They leave tracked JAR, checksum, package assets and app builds alone.
 

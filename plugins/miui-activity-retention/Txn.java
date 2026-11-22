@@ -207,8 +207,7 @@ public final class Txn {
         if (!boot.equals(active.boot) || !boot.equals(update.boot) || update.previous
                 || !active.updateId.equals(update.id) || !active.pending || !active.reconciling)
             throw new IOException("Pending checkpoint does not match the current migration and boot");
-        if (requireMatch && (!active.enabled || active.owned.get(0).isEmpty() || !active.owned.get(1).isEmpty()))
-            throw new IOException("Checkpoint does not match the partial restore shape");
+        if (requireMatch) requirePartialRestore(active);
 
         List<List<String>> observed = stableSnapshot(io);
         List<List<String>> proposed = plan(active, active.image, Collections.emptySet(), false).image;
@@ -286,10 +285,18 @@ public final class Txn {
             if (magic(bytes) != TXN2) throw new IOException("Legacy installation requires explicit configure");
             state = readActive(bytes);
         }
-        requireCommittedUpdate(dir, state);
+        Update migration = requireCommittedUpdate(dir, state);
         if (state == null && !enable) return;
         boolean sameBoot = state != null && boot.equals(state.boot);
-        if (sameBoot && state.pending) throw new IOException("A previous write is unresolved");
+        if (sameBoot && state.pending) {
+            if (enable || migration == null || !boot.equals(migration.boot)
+                    || !Files.isRegularFile(journal, LinkOption.NOFOLLOW_LINKS)
+                    || !Files.isRegularFile(dir.resolve(UPDATE), LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("A previous write is unresolved");
+            }
+            reconcilePendingDisable(journal, state, io);
+            return;
+        }
         String updateId = state == null ? "" : state.updateId;
         boolean wasEnabled = state != null && state.enabled;
         if (!sameBoot && !enable) {
@@ -342,16 +349,44 @@ public final class Txn {
         }
     }
 
-    private static void requireCommittedUpdate(Path dir, Active active) throws IOException {
+    private static void requirePartialRestore(Active active) throws IOException {
+        if (!active.enabled || !active.reconciling || active.owned.get(0).isEmpty()
+                || !active.owned.get(1).isEmpty()) {
+            throw new IOException("Checkpoint does not match the partial restore shape");
+        }
+    }
+
+    private static void reconcilePendingDisable(Path journal, Active state, IO io) throws Exception {
+        requirePartialRestore(state);
+        List<List<String>> current = stableSnapshot(io);
+        Active target = plan(state, current, Collections.emptySet(), false);
+        if (!current.equals(target.image)) {
+            // This is a fresh Disable, so derive its only write from current HIDE and saved ownership.
+            preflight(io, current, target.image);
+            List<String> retained = new ArrayList<>(state.owned.get(0));
+            retained.retainAll(new HashSet<>(current.get(0)));
+            saveActive(journal, new Active(state.boot, state.updateId, current,
+                    Arrays.asList(retained, Collections.emptyList()), true, true, true));
+            requireCurrent(io, current);
+            dispatch(io, 0, target.image);
+            verifyWrite(io, 0, current, target.image);
+        }
+        requireCurrent(io, target.image);
+        saveActive(journal, target);
+    }
+
+    private static Update requireCommittedUpdate(Path dir, Active active) throws IOException {
         Path marker = dir.resolve(UPDATE);
         if (!Files.notExists(marker)) {
             Update update = readUpdate(readBytes(marker));
             if (active == null || update.previous || !update.id.equals(active.updateId)) {
                 throw new IOException("Migration outcome is unresolved");
             }
+            return update;
         } else if (active != null && !active.updateId.isEmpty()) {
             throw new IOException("Migration journal is missing");
         }
+        return null;
     }
 
     private static Active readEnabled(Path dir) throws IOException {
