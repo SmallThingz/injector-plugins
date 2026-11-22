@@ -1,7 +1,7 @@
 {
   "id": "animation-speed",
   "name": "Animation speed",
-  "version": "0.1",
+  "version": "0.1.0",
   "description": "Adjust Android animation duration. Apply changes while enabled; Disable restores previous values unless changed elsewhere.",
   "backend": "root",
   "runtime": "shell",

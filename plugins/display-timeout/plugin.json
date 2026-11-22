@@ -1,7 +1,7 @@
 {
   "id": "display-timeout",
   "name": "Display timeout",
-  "version": "0.1",
+  "version": "0.1.0",
   "description": "Set the idle screen timeout. Apply changes while enabled; Disable restores the previous setting unless changed elsewhere.",
   "backend": "root",
   "runtime": "shell",

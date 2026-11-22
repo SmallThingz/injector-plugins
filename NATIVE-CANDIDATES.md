@@ -14,3 +14,5 @@ python3 -B package-native.py caffeine NEW-CAFFEINE.zip
 ```
 
 Proposed unused release names are `plugins-20261123-native-010-1` for Battery/CPU and `plugins-20261123-caffeine-010-1` for Caffeine. Neither local nor remote tags are created here. A later authorized publication must recheck availability and bind the full candidate source commit, manifest path and exact ZIP hash; never replace published assets or move an existing tag. MIUI is a separate owner's lane.
+
+The unlisted animation-speed, display-timeout and historical miui-floating-windows source templates also use version 0.1.0. Only their version fields changed; their older checked-in ZIPs remain historical bytes and were not regenerated or added to the default catalog. The default miui-activity-retention candidate/version is owned separately.

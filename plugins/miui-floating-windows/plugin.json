@@ -1,7 +1,7 @@
 {
   "id": "miui-floating-windows",
   "name": "MIUI floating windows (experimental)",
-  "version": "0.1",
+  "version": "0.1.0",
   "description": "On amethyst OS3.0.303.0.WOPINXM, attachment failed with remote mmap MAP_FAILED and MIUI_NO_AGENT. No floating-window override was applied.",
   "backend": "root",
   "runtime": "shell",
