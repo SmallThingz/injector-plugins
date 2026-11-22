@@ -43,14 +43,14 @@
     },
     {
       "name": "MIUI Floating Window Unlimiter",
-      "description": "Matching activities from selected apps can stay in floating windows on amethyst OS3.0.303.0.WOPINXM.",
+      "description": "On amethyst OS3.0.303.0.WOPINXM, applies MIUI’s floating-window retention lists to declared activities across installed apps for the current Android user. MIUI can still pin or hide windows.",
       "icon": "windows",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "f1b03123046ae316ccad2966909455866af4c01d",
-        "tag": "plugins-20261122-miui-unlimiter-1",
+        "commit": "ef7858ef77304dc6553287a381ef3e2b90244fcf",
+        "tag": "plugins-20261122-miui-universal-1",
         "asset": "miui-activity-retention.zip",
-        "sha256": "3a47b11bced6a87552b108d7a030dd0f2a365fe93ea40c815422ce40011fc245",
+        "sha256": "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337",
         "manifestPath": "plugins/miui-activity-retention/plugin.json"
       }
     }
