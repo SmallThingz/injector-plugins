@@ -1,0 +1,58 @@
+{
+  "name": "Injector 0.1.0 candidate review 6390eef",
+  "description": "Separate review catalog for the frozen canonical candidates. Physical qualification and promotion remain pending.",
+  "plugins": [
+    {
+      "name": "Battery charge limit",
+      "description": "Set a charge window on supported battery controllers.",
+      "icon": "battery",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "6390eef6dc8eaaa37da3d1e6b783c179a4fdc34a",
+        "tag": "plugins-20261123-native-010-1",
+        "asset": "battery-charge-limit.zip",
+        "sha256": "2597b447e31c184ca9016c8e304a3fcb95f3be0af9c894b10cb6dfbcd0409fe3",
+        "manifestPath": "plugins/battery-charge-limit/plugin.json"
+      }
+    },
+    {
+      "name": "CPU frequency control",
+      "description": "Choose available governors and maximum frequencies for this device’s CPU policies.",
+      "icon": "cpu",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "6390eef6dc8eaaa37da3d1e6b783c179a4fdc34a",
+        "tag": "plugins-20261123-native-010-1",
+        "asset": "cpu-control.zip",
+        "sha256": "f6dd447e4f80af63a07d2680ca82608b955847780cc6602d099e81a2d57037bb",
+        "manifestPath": "plugins/cpu-control/plugin.json"
+      }
+    },
+    {
+      "name": "Caffeine",
+      "description": "Keep the screen awake across apps.",
+      "icon": "plugin",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "6390eef6dc8eaaa37da3d1e6b783c179a4fdc34a",
+        "tag": "plugins-20261123-caffeine-010-1",
+        "asset": "caffeine.zip",
+        "sha256": "7ca1784b660ff7b66e97e9679225ff41557ee2104018c417650552a304582981",
+        "manifestPath": "plugins/caffeine/plugin.json"
+      }
+    },
+    {
+      "name": "MIUI Floating Window Unlimiter",
+      "description": "On amethyst OS3.0.303.0.WOPINXM, applies MIUI’s floating-window retention lists to declared activities across installed apps for the current Android user. MIUI can still pin or hide windows.",
+      "icon": "windows",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "6390eef6dc8eaaa37da3d1e6b783c179a4fdc34a",
+        "tag": "plugins-20261123-miui-010-1",
+        "asset": "miui-activity-retention.zip",
+        "sha256": "6d0f981b8f2bba972145662a35d8e4ffa5ce3ca3c363ffee0543baab85c31e31",
+        "manifestPath": "plugins/miui-activity-retention/plugin.json"
+      }
+    }
+  ]
+}
