@@ -13,7 +13,7 @@ The failing MIUI floating-window plugin is excluded from the current catalog. It
 
 ## Release integrity
 
-The public candidate prerelease `plugins-20261122-controls-2` points to source commit `a1ee92c6159004c81159c599486d887c45e0e11f`. Its three ZIPs matched a clean rebuild from committed sources and were checked again after download. The default catalog remains on `plugins-20261122-power-2` pending coordinated catalog promotion. [Candidate release pins](releases/plugins-20261122-controls-2.json) · [Candidate catalog](https://raw.githubusercontent.com/SmallThingz/injector-plugins/8e99a55a6550c3107c5ac5532de62dceef1a7567/catalog.json).
+The public plugin prerelease `plugins-20261122-controls-2` points to source commit `a1ee92c6159004c81159c599486d887c45e0e11f`. Its three ZIPs matched a clean rebuild from committed sources and were checked again after download. The default catalog pins Battery, CPU and Caffeine to this release. Battery ordinary replacement was verified on amethyst. The CPU governor results cover the isolated native hook. [Candidate release pins](releases/plugins-20261122-controls-2.json) · [Candidate catalog](https://raw.githubusercontent.com/SmallThingz/injector-plugins/8e99a55a6550c3107c5ac5532de62dceef1a7567/catalog.json).
 
 Injector checks the resolved tag, source manifest and downloaded package before installation.
 
