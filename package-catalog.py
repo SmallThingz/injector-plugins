@@ -31,7 +31,7 @@ PACKAGE_FILES = {
 CATALOG_DESCRIPTIONS = {
     "battery-charge-limit": "Requires a supported charge controller.",
     "cpu-control": "Per-policy frequency limits, governors and live monitoring on amethyst OS3.0.303.",
-    "caffeine": "Timed or untimed screen-awake sessions across apps.",
+    "caffeine": "Keep the screen awake across apps for 15 or 30 minutes.",
 }
 CATALOG_ICONS = {"battery-charge-limit": "battery", "cpu-control": "cpu", "caffeine": "plugin"}
 DURATIONS = {"300", "900", "1800", "3600", "18000", "indefinite"}
