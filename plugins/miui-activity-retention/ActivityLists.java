@@ -70,14 +70,19 @@ public final class ActivityLists implements Txn.IO {
         }
     }
 
-    private void execute(String event, Path state, String updateId, String boot) throws Exception {
+    interface InventoryEvent {
+        void run(String event, Path state, String updateId, String boot) throws Exception;
+    }
+
+    static void execute(String event, Path state, String updateId, String boot,
+                        Txn.IO controller, InventoryEvent inventory) throws Exception {
         if (event.equals("inspect-state") || event.equals("inspect-recovery")) {
             String challenge = System.getenv("INJECTOR_INSPECT_ID");
             if (challenge == null || !UUID.fromString(challenge).toString().equals(challenge))
                 throw new IllegalArgumentException("Invalid inspection challenge");
             boolean recovery = event.equals("inspect-recovery");
             long started = System.nanoTime();
-            String proof = recovery ? Txn.inspectRecovery(state, boot, this) : Txn.inspectState(state, boot, this);
+            String proof = recovery ? Txn.inspectRecovery(state, boot, controller) : Txn.inspectState(state, boot, controller);
             long elapsedMs = (System.nanoTime() - started) / 1_000_000;
             System.out.println((recovery ? "MIUI_RECOVERY_OBSERVED " : "MIUI_STATE ")
                     + challenge + " " + boot + " " + proof + " " + elapsedMs);
@@ -87,16 +92,16 @@ public final class ActivityLists implements Txn.IO {
             if ("1".equals(System.getenv("INJECTOR_RECOVERY_HANDOFF"))) {
                 if (!UUID.fromString(updateId).toString().equals(updateId))
                     throw new IllegalArgumentException("Invalid recovery handoff ID");
-                Txn.requireRepairable(state, boot, this);
+                Txn.requireRepairable(state, boot, controller);
                 System.out.println("REPAIRABLE " + updateId);
                 return;
             }
-            System.out.println(Txn.inspectUpdate(state, boot, updateId, this) + " " + updateId);
+            System.out.println(Txn.inspectUpdate(state, boot, updateId, controller) + " " + updateId);
             return;
         }
         if (event.equals("disable")) {
             System.err.println("MIUI stage: restore started");
-            Txn.run(state, boot, "disable", Collections.emptyList(), this);
+            Txn.run(state, boot, "disable", Collections.emptyList(), controller);
             Files.deleteIfExists(state.resolve("activity-package-sequence"));
             System.err.println("MIUI stage: restore verified");
             return;
@@ -106,6 +111,10 @@ public final class ActivityLists implements Txn.IO {
         if (!refresh && !event.equals("enable") && !event.equals("configure") && !event.equals("inspect-inventory"))
             throw new IllegalArgumentException("Unknown event");
 
+        inventory.run(event, state, updateId, boot);
+    }
+
+    private void applyInventory(String event, Path state, String updateId, String boot) throws Exception {
         inventoryUser = Inventory.currentUser();
         PackageChanges changes = new PackageChanges(state, boot, inventoryUser);
         boolean changed = changes.observe();
@@ -141,6 +150,7 @@ public final class ActivityLists implements Txn.IO {
         String boot = new String(Files.readAllBytes(Paths.get("/proc/sys/kernel/random/boot_id")),
                 StandardCharsets.US_ASCII).trim();
         if (!UUID.fromString(boot).toString().equals(boot)) throw new IOException("Boot identity missing");
-        new ActivityLists().execute(args[0], Paths.get(args[1]), args[2], boot);
+        ActivityLists bridge = new ActivityLists();
+        execute(args[0], Paths.get(args[1]), args[2], boot, bridge, bridge::applyInventory);
     }
 }

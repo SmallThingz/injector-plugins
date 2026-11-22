@@ -38,6 +38,14 @@ A fresh explicit request uses stable reads under FD9. If the affected field matc
 
 The reviewed vendor Binder setters are one-way. The service delegates to an adapter that replaces each list under its own monitor, and its synchronous getters can observe a list before a queued setter runs. The hook uses bounded post-dispatch read-back and stops on observed drift. The vendor API provides whole-list replacement with no compare-and-set. This preserves observed external entries without guaranteeing isolation from a concurrent writer between the final check and the setter. The saved inactive image and the success of this fresh Disable are current-state evidence. Historical Enable/Disable receipts retain their original outcomes.
 
+## Explicit Restore and scheduled refresh
+
+In Injector `05f8331`, Restore changes captures the installation and receipt revision, creates a fresh UI request key, and calls `restoreChanges`. With current approval, the runtime submits Disable with that key. A prior unknown or failed Disable and an available installation claim can therefore lead to another explicit invocation of the same Disable hook. A new key identifies a new user request. It supplies no evidence about the first Binder setter.
+
+Normal explicit Disable also persists a stop marker before dispatch. While that marker exists, the host excludes boot candidates and rejects interval scheduling and delivery, including after restart. The direction stored in TXN4 protects the plugin if called independently with a partial restore. The host fixture `PluginRefreshOptOutTest` exercises restart suppression and the explicit Restore menu action.
+
+`BridgeDisableTest` executes the bridge event dispatcher with a fake controller. The first Disable restores SHOW and queues HIDE with a lost reply. A second explicit Disable retains both journal and cursor and issues zero setters. Once the original HIDE is delivered, another explicit Disable records INACTIVE with zero setters. These host checks cover event routing and recovery logic. Device transport and package identity require separate qualification.
+
 ## Handoff and timing
 
 The host binds a fresh challenge to the exact candidate payload, original installation generation, state lineage, current boot and approval under its own claim. The journal contains a boot identity and migration UUID; it does not encode Injector's installation generation. The plugin lock excludes workers that have reached it. Future host admission also needs to exclude a delayed worker that has not yet reached that lock. A durable per-request permit or conclusive prior termination is a separate host condition before any fresh explicit mutation. Older unfenced and interrupted operations remain unresolved.

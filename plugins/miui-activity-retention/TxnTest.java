@@ -19,7 +19,7 @@ public final class TxnTest {
     private interface Action { void run() throws Exception; }
     private static final class WorkerDied extends Error {}
 
-    private static final class Host implements Txn.IO {
+    static final class Host implements Txn.IO {
         final Path dir;
         final Map<String, List<String>> values = new HashMap<>();
         final List<String> calls = new ArrayList<>();
