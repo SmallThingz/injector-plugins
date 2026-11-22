@@ -27,13 +27,18 @@ PACKAGE_FILES = {
     "battery-charge-limit": COMMON + ("thresholds.sh", "input-suspend.sh", "session.sh", "native-charge"),
     "cpu-control": ("plugin.json", "cpu-control-native", "README.md", "NOTICE.md"),
     "caffeine": ("plugin.json", "acquire.json", "release.json"),
+    "miui-activity-retention": ("plugin.json", "hook.sh", "activity-lists.jar", "payload.sha256"),
 }
 CATALOG_DESCRIPTIONS = {
     "battery-charge-limit": "Requires a supported charge controller.",
     "cpu-control": "Per-policy frequency limits, governors and live monitoring on amethyst OS3.0.303.",
     "caffeine": "Keep the screen awake for 30 minutes, 1 hour, 5 hours or until stopped.",
+    "miui-activity-retention": "Keep selected launcher activities in floating windows on amethyst OS3.0.303.0.",
 }
-CATALOG_ICONS = {"battery-charge-limit": "battery", "cpu-control": "cpu", "caffeine": "plugin"}
+CATALOG_ICONS = {
+    "battery-charge-limit": "battery", "cpu-control": "cpu", "caffeine": "plugin",
+    "miui-activity-retention": "windows",
+}
 DURATIONS = {"300", "900", "1800", "3600", "18000", "indefinite"}
 PLUGIN_REFERENCE = re.compile(
     r'\$(?:INJECTOR_PLUGIN_DIR|\{INJECTOR_PLUGIN_DIR(?::\?)?\})/([^\s"\x27;|&()]+)'
@@ -114,11 +119,28 @@ def validate_manifest(plugin, members):
     if not isinstance(manifest.get("name"), str) or not manifest["name"].strip():
         raise ValueError("Missing plugin name")
     hooks = manifest.get("hooks")
-    if not isinstance(hooks, dict) or set(hooks) != {"enable", "run", "disable"}:
-        raise ValueError("Expected enable/run/disable hooks")
+    expected_hooks = {"enable", "disable"}
+    if plugin != "miui-activity-retention":
+        expected_hooks.add("run")
+    if not isinstance(hooks, dict) or set(hooks) != expected_hooks:
+        raise ValueError(f"Unexpected hook events for {plugin}")
     if any(not isinstance(hook, str) or hook not in members for hook in hooks.values()):
         raise ValueError("Missing or undeclared hook file")
-    if plugin == "caffeine":
+    if plugin == "miui-activity-retention":
+        if (manifest.get("backend"), manifest.get("runtime")) != ("root", "shell") or set(hooks.values()) != {"hook.sh"}:
+            raise ValueError("MIUI retention requires root/shell enable and disable hooks")
+        if manifest.get("triggers") or "session" in manifest:
+            raise ValueError("MIUI retention requires explicit toggles")
+        if manifest.get("quickSettings") != {"icon": "windows", "behavior": "toggle"}:
+            raise ValueError("Expected MIUI retention Quick Settings toggle")
+        inputs = manifest.get("ui", {}).get("inputs")
+        if inputs != [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]:
+            raise ValueError("Expected MIUI retention activities picker")
+        checksum = f'{sha256(members["activity-lists.jar"])}  activity-lists.jar\n'
+        if members["payload.sha256"] != checksum.encode("ascii"):
+            raise ValueError("MIUI retention JAR checksum differs")
+        shell_closure(members)
+    elif plugin == "caffeine":
         if (manifest.get("backend"), manifest.get("runtime")) != ("app", "native"):
             raise ValueError("Caffeine requires app/native")
         triggers = manifest.get("triggers", {})
@@ -251,7 +273,16 @@ def release_pin(path, require_tag=False, plugins=None, historical=False):
     if not isinstance(pin["tag"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", pin["tag"]):
         raise ValueError("Invalid release tag")
     git("check-ref-format", f"refs/tags/{pin['tag']}")
-    if not isinstance(pin["assets"], dict) or set(pin["assets"]) != {p + ".zip" for p in (PACKAGE_FILES if historical else plugins)}:
+    if not isinstance(pin["assets"], dict):
+        raise ValueError("Expected a release asset map")
+    assets = set(pin["assets"])
+    expected = {p + ".zip" for p in plugins}
+    if historical:
+        known = {p + ".zip" for p in PACKAGE_FILES}
+        valid_assets = expected <= assets <= known
+    else:
+        valid_assets = assets == expected
+    if not valid_assets:
         raise ValueError("Unexpected release asset set")
     if any(not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
            for digest in pin["assets"].values()):
@@ -337,7 +368,7 @@ def main(argv=None):
                          help="new release metadata; inherited/historical release.json is not assumed current")
         sub.add_argument("--catalog", type=Path, default=ROOT / "catalog.json")
         sub.add_argument("--retain", action="append", default=[], metavar="PLUGIN=RELEASE",
-                         help="retain a plugin from a previous three-asset release")
+                         help="retain a plugin from a previous pinned release")
         sub.add_argument("--require-tag", action="store_true", help="require matching local tag; no remote verification")
     args = parser.parse_args(argv)
     try:

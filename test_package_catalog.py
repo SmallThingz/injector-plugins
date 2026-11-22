@@ -127,6 +127,19 @@ class PackagingTests(unittest.TestCase):
         self.write("plugins/caffeine/acquire.json", pack.encoded({
             "action": "keep-screen-on", "operation": "acquire", "durationInput": "duration"}))
         self.write("plugins/caffeine/release.json", pack.encoded({"action": "keep-screen-on", "operation": "release"}))
+        retention = {
+            "id": "miui-activity-retention", "name": "MIUI window retention", "version": "0.1",
+            "backend": "root", "runtime": "shell",
+            "hooks": dict.fromkeys(("enable", "disable"), "hook.sh"),
+            "quickSettings": {"icon": "windows", "behavior": "toggle"},
+            "ui": {"inputs": [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]},
+        }
+        base = "plugins/miui-activity-retention/"
+        payload = b"Reviewed fixture payload"
+        self.write(base + "plugin.json", pack.encoded(retention))
+        self.write(base + "hook.sh", "# packaging must not execute this\n")
+        self.write(base + "activity-lists.jar", payload)
+        self.write(base + "payload.sha256", f"{pack.sha256(payload)}  activity-lists.jar\n")
 
     def change_manifest(self, plugin, update):
         path = self.repo / "plugins" / plugin / "plugin.json"
@@ -146,6 +159,7 @@ class PackagingTests(unittest.TestCase):
                                     "thresholds.sh", "input-suspend.sh", "session.sh", "native-charge"},
             "cpu-control": {"plugin.json", "cpu-control-native", "README.md", "NOTICE.md"},
             "caffeine": {"plugin.json", "acquire.json", "release.json"},
+            "miui-activity-retention": {"plugin.json", "hook.sh", "activity-lists.jar", "payload.sha256"},
         }
         self.assertEqual(set(pack.PACKAGE_FILES), set(expected))
         for plugin, names in expected.items():
@@ -171,7 +185,7 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("PENDING:", result.stdout)
         catalog = json.loads((self.repo / ".tmp/catalog-new.json").read_text())
         self.assertEqual([x["release"]["asset"] for x in catalog["plugins"]],
-                         ["battery-charge-limit.zip", "cpu-control.zip", "caffeine.zip"])
+                         ["battery-charge-limit.zip", "cpu-control.zip", "caffeine.zip", "miui-activity-retention.zip"])
         self.assertTrue(all(x["release"]["commit"] == self.a for x in catalog["plugins"]))
         self.assertEqual(self.before, self.tree())
         self.cli("verify", "--release", self.pin_path, "--catalog", ".tmp/catalog-new.json")
@@ -189,6 +203,48 @@ class PackagingTests(unittest.TestCase):
             result = self.cli(command, ok=False)
             self.assertIn("--release", result.stderr)
         self.assertEqual(self.before, self.tree())
+
+    def test_mixed_release_asset_sets_retain_existing_pins(self):
+        subsets = {
+            "controls": ("battery-charge-limit.zip", "cpu-control.zip", "caffeine.zip"),
+            "caffeine": ("caffeine.zip",),
+            "retention": ("miui-activity-retention.zip",),
+        }
+        for tag, assets in subsets.items():
+            pin = dict(self.pin, tag=tag, assets={asset: self.pin["assets"][asset] for asset in assets})
+            self.write(f".tmp/{tag}.json", pack.encoded(pin))
+            self.git("tag", tag, self.a)
+        args = ("--release", ".tmp/retention.json", "--catalog", ".tmp/mixed.json", "--require-tag",
+                "--retain", "battery-charge-limit=.tmp/controls.json",
+                "--retain", "cpu-control=.tmp/controls.json", "--retain", "caffeine=.tmp/caffeine.json")
+        self.cli("build", *args)
+        catalog = json.loads((self.repo / ".tmp/mixed.json").read_text())
+        self.assertEqual([entry["release"]["tag"] for entry in catalog["plugins"]],
+                         ["controls", "controls", "caffeine", "retention"])
+        self.cli("verify", *args)
+        with self.assertRaisesRegex(ValueError, "asset set"):
+            pack.release_pin(self.repo / ".tmp/caffeine.json", plugins=["cpu-control"], historical=True)
+        self.assertEqual(self.before, self.tree())
+
+    def test_retention_picker_toggle_hook_and_payload_are_checked(self):
+        plugin = "miui-activity-retention"
+        original = (self.repo / "plugins/miui-activity-retention/plugin.json").read_bytes()
+        changes = [
+            (lambda m: m["ui"]["inputs"][0].update(type="text"), "activities picker"),
+            (lambda m: m["quickSettings"].update(icon="cpu"), "Quick Settings toggle"),
+            (lambda m: m["hooks"].update(run="hook.sh"), "hook events"),
+            (lambda m: m.update(triggers={"boot": True}), "explicit toggles"),
+        ]
+        for update, error in changes:
+            with self.subTest(error=error):
+                self.write(f"plugins/{plugin}/plugin.json", original)
+                self.change_manifest(plugin, update)
+                with self.assertRaisesRegex(ValueError, error):
+                    pack.package(plugin)
+        self.write(f"plugins/{plugin}/plugin.json", original)
+        self.write(f"plugins/{plugin}/activity-lists.jar", b"changed")
+        with self.assertRaisesRegex(ValueError, "JAR checksum"):
+            pack.package(plugin)
 
     def test_missing_helper_and_late_descriptor_failure_write_nothing(self):
         helper = self.repo / "plugins/battery-charge-limit/session.sh"
@@ -283,7 +339,7 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "MHz"):
             pack.package("cpu-control")
 
-    def test_pin_fields_and_old_four_asset_release_rejected(self):
+    def test_pin_fields_and_unknown_assets_rejected(self):
         original = copy.deepcopy(self.pin)
         changes = [
             lambda p: p.update(commit=None),

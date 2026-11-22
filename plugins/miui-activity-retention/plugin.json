@@ -1,0 +1,11 @@
+{
+  "id": "miui-activity-retention",
+  "name": "MIUI window retention",
+  "version": "0.1",
+  "description": "On amethyst OS3.0.303.0, selected apps’ launcher activities can stay in floating windows when another selected activity opens. MIUI may hide a calling window while its child is open.",
+  "backend": "root",
+  "runtime": "shell",
+  "hooks": {"enable": "hook.sh", "disable": "hook.sh"},
+  "quickSettings": {"icon": "windows", "behavior": "toggle"},
+  "ui": {"inputs": [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]}
+}
