@@ -42,7 +42,14 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         plugin = "miui-activity-retention"
         previous_commit = "e17de5d108d87b4a84289988c430a1d8f523b416"
         previous = pack.committed_file(previous_commit, pack.package_path(plugin))
-        data, _ = pack.package(plugin)
+        event_commit = "1fa871e327e2167d0017a0a40f0bfb275befd861"
+        data = pack.committed_file(event_commit, pack.package_path(plugin))
+        self.assertEqual(pack.sha256(data), "87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197")
+        current, _ = pack.package(plugin)
+        with zipfile.ZipFile(io.BytesIO(current)) as diagnostic, zipfile.ZipFile(io.BytesIO(data)) as event:
+            self.assertEqual(set(diagnostic.namelist()), set(event.namelist()))
+            changed = {name for name in event.namelist() if diagnostic.read(name) != event.read(name)}
+            self.assertEqual(changed, {"activity-lists.jar", "payload.sha256"})
         with zipfile.ZipFile(io.BytesIO(previous)) as old, zipfile.ZipFile(io.BytesIO(data)) as new:
             self.assertEqual(set(old.namelist()), set(new.namelist()))
             members = {name: new.read(name) for name in new.namelist()}

@@ -9,6 +9,11 @@ trap 'rm -rf "$work"' EXIT
 mkdir "$work/classes"
 javac --release 8 -cp "$platform" -d "$work/classes" *.java tests/*.java
 classpath="$work/classes:$platform"
+# Invalid arguments fail before Android service access and exercise the real process entry point.
+status=0
+java -cp "$classpath" ActivityLists > "$work/main.out" 2> "$work/main.err" || status=$?
+[[ "$status" == 1 && ! -s "$work/main.out" ]]
+grep -Fx 'MIUI worker failure java.lang.IllegalStateException' "$work/main.err"
 java -cp "$classpath" InventoryTest
 java -cp "$classpath" ParcelCapacityTest
 java -cp "$classpath" PackageChangesTest "$work/cursor"

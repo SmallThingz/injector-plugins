@@ -1,4 +1,6 @@
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -37,8 +39,27 @@ public final class BridgeDisableTest {
         } catch (IllegalArgumentException expected) {}
     }
 
+    private static void failureDiagnostics() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        PrintStream previous = System.err;
+        try (PrintStream capture = new PrintStream(bytes, true, "UTF-8")) {
+            System.setErr(capture);
+            Exception failure = new IllegalStateException("private fixture contents");
+            for (int i = 0; i < 5; i++) failure = new IllegalStateException("private fixture contents", failure);
+            ActivityLists.reportFailure(new java.lang.reflect.InvocationTargetException(failure));
+        } finally {
+            System.setErr(previous);
+        }
+        String log = bytes.toString("UTF-8");
+        check(log.contains("failure java.lang.reflect.InvocationTargetException"));
+        check(log.contains("cause java.lang.IllegalStateException"));
+        check(log.contains("BridgeDisableTest.failureDiagnostics") && !log.contains("private fixture contents"));
+        check(log.split("MIUI worker ", -1).length - 1 == 4);
+    }
+
     public static void main(String[] args) throws Exception {
         enableIdentity();
+        failureDiagnostics();
         TxnTest.Host host = new TxnTest.Host(Paths.get(args[0]), "explicit-restore");
         host.enable("boot", Collections.singletonList("app.Activity"));
         Path cursor = Files.write(host.dir.resolve("activity-package-sequence"), new byte[]{1});

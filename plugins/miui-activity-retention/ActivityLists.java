@@ -177,7 +177,30 @@ public final class ActivityLists implements Txn.IO {
         return true;
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
+        try {
+            run(args);
+        } catch (Exception failure) {
+            reportFailure(failure);
+            System.exit(1);
+        }
+    }
+
+    static void reportFailure(Exception failure) {
+        // Binder and framework exception messages can include their arguments.
+        Throwable cause = failure;
+        for (int depth = 0; cause != null && depth < 4; depth++, cause = cause.getCause()) {
+            StackTraceElement[] frames = cause.getStackTrace();
+            boolean txnError = frames.length > 0 && frames[0].getClassName().equals(Txn.class.getName())
+                    && cause.getClass() == IOException.class;
+            System.err.println("MIUI worker " + (depth == 0 ? "failure " : "cause ") + cause.getClass().getName()
+                    + (txnError ? ": " + cause.getMessage() : ""));
+            for (int i = 0; i < Math.min(4, frames.length); i++)
+                System.err.println("  at " + frames[i]);
+        }
+    }
+
+    private static void run(String[] args) throws Exception {
         if (args.length != 3 || android.os.Process.myUid() != 0 || !android.os.Build.FINGERPRINT.equals(FIRMWARE))
             throw new IllegalStateException("Unsupported caller or firmware");
         String boot = new String(Files.readAllBytes(Paths.get("/proc/sys/kernel/random/boot_id")),
