@@ -1,7 +1,7 @@
 //! Linux power_supply charge-window adapter. The driver enforces the two thresholds.
 use crate::{
     lease::Lease,
-    monitor::{exists, read, read_file, regular, Error, Result, WindowUpdate},
+    monitor::{exists, identity, read, read_file, regular, Error, Identity, Result, WindowUpdate},
     percent, uuid,
 };
 use std::{
@@ -10,7 +10,7 @@ use std::{
     io::{self, Write},
     os::{
         fd::AsRawFd,
-        unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+        unix::fs::{OpenOptionsExt, PermissionsExt},
     },
     path::{Path, PathBuf},
 };
@@ -25,11 +25,6 @@ const OWNER: &str = "native-threshold-owner";
 const LOCK_BUSY: &str = "Charge limit lock is busy";
 
 type Pair = [u8; 2];
-type Identity = (u64, u64);
-
-fn identity(meta: &fs::Metadata) -> Identity {
-    (meta.dev(), meta.ino())
-}
 
 fn pair(text: &str) -> Result<Pair> {
     let (start, end) = text

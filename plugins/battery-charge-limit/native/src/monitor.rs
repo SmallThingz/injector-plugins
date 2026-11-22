@@ -122,6 +122,13 @@ pub(super) fn exists(path: &Path) -> Result<bool> {
         Err(e) => Err(e.into()),
     }
 }
+
+pub(super) type Identity = (u64, u64);
+
+pub(super) fn identity(meta: &fs::Metadata) -> Identity {
+    (meta.dev(), meta.ino())
+}
+
 struct Receipt {
     confirmed: u8,
     pending: Option<u8>,
@@ -145,25 +152,22 @@ pub struct Controller {
     state: PathBuf,
     battery_link: PathBuf,
     battery: PathBuf,
+    battery_id: Identity,
     node: PathBuf,
     controller: PathBuf,
+    controller_id: Identity,
     boot: String,
     session: String,
     launch: String,
 }
 
 impl Controller {
-    pub fn discover(session: &str) -> Result<Self> {
-        let (sys, firmware) = platform()?;
+    pub fn discover(sys: &Path, state: &Path, firmware: &str, session: &str) -> Result<Self> {
         if firmware != FIRMWARE {
             return Err(Error::failure(
                 "This device has no supported charging control backend",
             ));
         }
-        let state = PathBuf::from(
-            env::var_os("PLUGIN_STATE_DIR")
-                .ok_or_else(|| Error::failure("Missing state directory"))?,
-        );
         let devices = sys.join("devices");
         let battery_link = sys.join("class/power_supply/battery");
         let battery = battery_link.canonicalize()?;
@@ -187,10 +191,12 @@ impl Controller {
             return Err(Error::failure("Invalid boot identity"));
         }
         Ok(Self {
-            state,
+            state: state.into(),
             battery_link,
+            battery_id: identity(&battery.metadata()?),
             battery,
             node,
+            controller_id: identity(&regular(&controller, false)?.metadata()?),
             controller,
             boot,
             session: session.into(),
@@ -221,23 +227,40 @@ impl Controller {
         }
         Ok(lock)
     }
-    fn live(&self) -> Result<u8> {
-        if self.node.canonicalize()? != self.controller {
-            return Err(Error::conflict("Input-suspend controller changed"));
+    fn bound_node(&self, write: bool) -> Result<File> {
+        if self.battery_link.canonicalize().ok().as_ref() != Some(&self.battery)
+            || self.battery.metadata().ok().as_ref().map(identity) != Some(self.battery_id)
+            || !read(&self.battery.join("type"))
+                .is_ok_and(|value| value.trim_end_matches('\n') == "Battery")
+            || self.node.canonicalize().ok().as_ref() != Some(&self.controller)
+        {
+            return Err(Error::conflict(
+                "Battery or input-suspend binding changed; journal retained",
+            ));
         }
-        match read(&self.node)?.trim_end_matches('\n') {
+        let file = regular(&self.controller, write)?;
+        if identity(&file.metadata()?) != self.controller_id {
+            return Err(Error::conflict(
+                "Input-suspend attribute identity changed; journal retained",
+            ));
+        }
+        Ok(file)
+    }
+    fn live(&self) -> Result<u8> {
+        match read_file(&self.bound_node(false)?)?.trim_end_matches('\n') {
             "0" => Ok(0),
             "1" => Ok(1),
             _ => Err(Error::conflict("Invalid input suspend")),
         }
     }
     fn check(&self, r: &Receipt) -> Result<()> {
-        if self.live().ok() != Some(r.confirmed) {
-            return Err(Error::conflict(
+        match self.live() {
+            Ok(value) if value == r.confirmed => Ok(()),
+            Err(error @ Error(3, _)) => Err(error),
+            _ => Err(Error::conflict(
                 "Input suspend changed or outcome unknown; journal retained",
-            ));
+            )),
         }
-        Ok(())
     }
     fn journal(&self) -> PathBuf {
         self.state.join("input-suspend-state")
@@ -314,15 +337,13 @@ impl Controller {
         if receipt.pending.is_some() || (!owned && receipt.confirmed != 0) {
             return Ok("UNREADABLE");
         }
-        if self.battery_link.canonicalize()? != self.battery {
-            return Ok("UNREADABLE");
-        }
+        let owner = self.verified_owner(&launch)?;
         let live = self.live()?;
         let status = if live != receipt.confirmed {
             "EXTERNALLY_CHANGED"
         } else if !owned {
             "RESTORED"
-        } else if self.owner_alive(&launch)? {
+        } else if Self::owner_alive(&owner)? {
             "ACTIVE"
         } else {
             "UNREADABLE"
@@ -330,9 +351,7 @@ impl Controller {
 
         // Writers publish records by rename. Holding the original inode open
         // lets us detect even a round trip back to the same receipt contents.
-        let original = evidence.metadata()?;
-        let current = fs::symlink_metadata(path)?;
-        if (original.dev(), original.ino()) != (current.dev(), current.ino())
+        if identity(&evidence.metadata()?) != identity(&fs::symlink_metadata(path)?)
             || (!owned && exists(&self.journal())?)
             || exists(&self.state.join("threshold-state"))?
             || exists(&self.state.join("native-threshold-state"))?
@@ -342,15 +361,31 @@ impl Controller {
         Ok(status)
     }
 
-    fn owner_alive(&self, launch: &str) -> Result<bool> {
+    fn owner_marker(&self, launch: &str) -> String {
+        let (battery_dev, battery_ino) = self.battery_id;
+        let (node_dev, node_ino) = self.controller_id;
+        format!("{launch}\n{battery_dev}:{battery_ino}\n{node_dev}:{node_ino}\n")
+    }
+
+    fn verified_owner(&self, launch: &str) -> Result<File> {
         let owner = regular(&self.owner(), false)?;
-        let mut marker = String::new();
-        (&owner).take(37).read_to_string(&mut marker)?;
-        // Only an exclusive lock conflicts with this shared probe. The marker
-        // binds that lock to the launch recorded by this session's journal.
-        Ok(marker == launch
-            && unsafe { libc::flock(owner.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0
-            && io::Error::last_os_error().kind() == io::ErrorKind::WouldBlock)
+        if read_file(&owner)? != self.owner_marker(launch) {
+            return Err(Error::conflict(
+                "Charging launch or controller binding could not be verified; journal retained",
+            ));
+        }
+        Ok(owner)
+    }
+
+    fn owner_alive(owner: &File) -> Result<bool> {
+        if unsafe { libc::flock(owner.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } == 0 {
+            return Ok(false);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::WouldBlock {
+            return Ok(true);
+        }
+        Err(error.into())
     }
 
     fn load(&self) -> Result<Receipt> {
@@ -365,7 +400,7 @@ impl Controller {
         Ok(receipt)
     }
     fn writable(&self) -> Result<bool> {
-        Ok(self.node.symlink_metadata()?.permissions().mode() & 0o200 != 0)
+        Ok(self.bound_node(false)?.metadata()?.permissions().mode() & 0o200 != 0)
     }
     pub fn start(&mut self) -> Result<File> {
         let _lock = self.lock()?;
@@ -397,7 +432,7 @@ impl Controller {
         if unsafe { libc::flock(owner.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(Error::failure("Charging owner lock unavailable or busy"));
         }
-        owner.write_all(self.launch.as_bytes())?;
+        owner.write_all(self.owner_marker(&self.launch).as_bytes())?;
         fs::rename(temp, self.owner())?;
         self.save(&Receipt {
             confirmed: 0,
@@ -421,11 +456,12 @@ impl Controller {
                 "Input suspend became read-only",
             )));
         }
-        let node = regular(&self.node, true);
+        let node = self.bound_node(true);
         #[cfg(not(target_os = "android"))]
         if lease.is_some() {
             fixture_pause("before-write");
         }
+        self.check(r)?;
         if let Some(l) = lease {
             if !l.current()? {
                 r.pending = None;
@@ -435,9 +471,11 @@ impl Controller {
         }
         // A successful sysfs request must accept the entire value in one write.
         let bytes = if target == 0 { b"0\n" } else { b"1\n" };
-        let written = node
-            .and_then(|mut f| Ok(f.write(bytes)? == bytes.len()))
-            .unwrap_or(false);
+        let written = match node {
+            Ok(mut file) => file.write(bytes).is_ok_and(|count| count == bytes.len()),
+            Err(error @ Error(3, _)) => return Err(error),
+            Err(_) => false,
+        };
         #[cfg(not(target_os = "android"))]
         if lease.is_some() {
             fixture_pause("after-write");
@@ -466,9 +504,6 @@ impl Controller {
     pub fn tick(&self, resume: u8, stop: u8, lease: &Lease) -> Result<WindowUpdate> {
         let _lock = self.lock()?;
         let mut r = self.load()?;
-        if self.battery_link.canonicalize().ok().as_ref() != Some(&self.battery) {
-            return Err(Error::conflict("Battery controller changed"));
-        }
         let cap = match read(&self.battery.join("capacity"))
             .and_then(|value| percent(value.trim_end_matches('\n')))
         {
@@ -488,7 +523,8 @@ impl Controller {
         let journal = self.journal();
         let restored = self.restored();
         if !exists(&journal)? {
-            let (receipt, _) = self.read_receipt(&restored)?;
+            let (receipt, launch) = self.read_receipt(&restored)?;
+            self.verified_owner(&launch)?;
             self.check(&receipt)?;
             if receipt.confirmed != 0 || receipt.pending.is_some() {
                 return Err(Error::conflict("Invalid charging restoration receipt"));
@@ -497,6 +533,10 @@ impl Controller {
         }
 
         let (mut receipt, launch) = self.read_receipt(&journal)?;
+        let owner = self.verified_owner(&launch)?;
+        if Self::owner_alive(&owner)? {
+            return Err(Error::failure("The input-suspend session is still active"));
+        }
         self.check(&receipt)?;
         self.launch = launch;
         if receipt.pending.take().is_some() {

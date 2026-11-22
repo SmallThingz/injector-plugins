@@ -86,20 +86,31 @@ impl Controller {
             .filter(|v| !v.is_empty())
             .ok_or_else(|| Error::failure("Missing state directory"))?;
         let state = Path::new(&state);
-        if event == "monitor" || threshold::has_evidence(state, session)? {
-            let (sys, firmware) = monitor::platform()?;
+        let (sys, firmware) = monitor::platform()?;
+        let monitor = event == "monitor";
+        // The measured standard stop write on this firmware left the pair unchanged.
+        // Keep recovery bound to the recorded adapter. A failed or uncertain write
+        // never switches backends.
+        let use_standard = if monitor {
+            firmware != FIRMWARE
+        } else {
+            threshold::has_evidence(state, session)?
+        };
+        if use_standard {
             if let Some(controller) =
                 threshold::Controller::discover(&sys, state, &firmware, session)?
             {
                 return Ok(Self::Standard(controller));
             }
-            if event != "monitor" {
+            if !monitor {
                 return Err(Error::failure(
                     "The recorded charge threshold backend is unavailable",
                 ));
             }
         }
-        Ok(Self::VerifiedInputSuspend(InputSuspend::discover(session)?))
+        Ok(Self::VerifiedInputSuspend(InputSuspend::discover(
+            &sys, state, &firmware, session,
+        )?))
     }
 
     fn start(&mut self) -> Result<File> {
