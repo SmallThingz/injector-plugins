@@ -406,11 +406,14 @@ fn recover(root: &Path, state: &Path) -> Result<()> {
                 if live == row.target {
                     change(root, &row, true, None)?
                 } else if live != row.before {
-                    eprintln!(
-                        "Preserved changed {}/{} ({live}) during rollback.",
+                    return Err(format!(
+                        "Cannot verify rollback of {}/{}: read {live}, expected {} or {}.",
                         row.policy.id(),
-                        row.node
+                        row.node,
+                        row.before,
+                        row.target
                     )
+                    .into());
                 }
                 Ok(fs::remove_file(&marker)?)
             })();
@@ -543,4 +546,77 @@ pub(super) fn apply(root: &Path, state: &Path, event: &str) -> Result<String> {
     recover(root, state).map_err(IncompleteRecovery)?;
     applied?;
     Ok("CPU frequency settings confirmed.".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    struct Fixture(PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    fn rollback_fixture(live: &str) -> (Fixture, PathBuf, PathBuf) {
+        let fixture = Fixture(
+            env::temp_dir().join(format!("cpu-recovery-{}-{live}", std::process::id())),
+        );
+        let root = fixture.0.join("sysfs");
+        let dir = root.join("policy0");
+        let state = fixture.0.join("state");
+        let pending = state.join("pending");
+        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&pending).unwrap();
+        for (name, value) in [
+            ("related_cpus", "0 1 2 3"),
+            ("affected_cpus", "0 1 2 3"),
+            ("scaling_driver", "fixture"),
+            ("scaling_min_freq", "500000"),
+            ("cpuinfo_max_freq", "2000000"),
+            (MAX, live),
+        ] {
+            fs::write(dir.join(name), format!("{value}\n")).unwrap();
+        }
+        let policy = Policy::read(&root, "policy0").unwrap();
+        let key = PolicyKey::current("policy0", &policy);
+        fs::write(
+            pending.join("reverse"),
+            format!("1 {key} {MAX} 1804800 1708800 listed\n"),
+        )
+        .unwrap();
+        fs::write(pending.join("next"), format!("{key} {MAX} 1804800 1708800\n")).unwrap();
+        File::create_new(pending.join("attempt.1")).unwrap();
+        (fixture, root, state)
+    }
+
+    #[test]
+    fn ambiguous_readback_retains_the_attempt_and_live_value() {
+        let (_fixture, root, state) = rollback_fixture("1600000");
+        let pending = state.join("pending");
+        let reverse = fs::read(pending.join("reverse")).unwrap();
+        let next = fs::read(pending.join("next")).unwrap();
+        for _ in 0..2 {
+            let error = apply(&root, &state, "disable").unwrap_err();
+            assert!(error.is::<IncompleteRecovery>());
+            assert!(inspect(&root, &state).is_err());
+            assert_eq!(read(&root.join("policy0").join(MAX)).unwrap(), "1600000");
+            assert!(pending.join("attempt.1").is_file());
+            assert_eq!(fs::read(pending.join("reverse")).unwrap(), reverse);
+            assert_eq!(fs::read(pending.join("next")).unwrap(), next);
+        }
+    }
+
+    #[test]
+    fn known_readback_allows_rollback_to_finish() {
+        for live in ["1708800", "1804800"] {
+            let (_fixture, root, state) = rollback_fixture(live);
+            apply(&root, &state, "disable").unwrap();
+            assert_eq!(read(&root.join("policy0").join(MAX)).unwrap(), "1804800");
+            assert!(!state.join("pending").exists());
+        }
+    }
 }
