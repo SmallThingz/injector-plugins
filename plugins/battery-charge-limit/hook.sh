@@ -32,6 +32,8 @@ dispatch_charge_hook() {
         [ ! -e "$state_dir/input-suspend-state" ] && [ ! -L "$state_dir/input-suspend-state" ] ||
             fail 'Both charging adapters have saved state. Restore ownership before applying changes.'
         charge_limit "$event" "$supply_class" "$devices_root" "$state_dir" "$firmware" "${monitor_session:-}"
+    elif [ "$event" = monitor ] && [ "$firmware" = "$suspend_firmware" ]; then
+        exec_qcom_monitor
     elif [ "$firmware" = "$suspend_firmware" ] || [ "$event" = monitor ] ||
         [ -e "$state_dir/input-suspend-state" ] || [ -L "$state_dir/input-suspend-state" ]; then
         suspend_charge_limit "$event" "$supply_class" "$devices_root" /sys/class/qcom-battery \

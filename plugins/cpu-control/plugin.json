@@ -4,11 +4,11 @@
   "version": "0.1.1",
   "description": "For amethyst on HyperOS OS3.0.303.0.WOPINXM. Current system frequency limits can prevent applying the efficiency-core ceiling.",
   "backend": "root",
-  "runtime": "shell",
+  "runtime": "binary",
   "hooks": {
-    "enable": "hook.sh",
-    "run": "hook.sh",
-    "disable": "hook.sh"
+    "enable": "cpu-control-native",
+    "run": "cpu-control-native",
+    "disable": "cpu-control-native"
   },
   "ui": {
     "layout": "accordion",

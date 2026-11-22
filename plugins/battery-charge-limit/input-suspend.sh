@@ -204,3 +204,13 @@ suspend_charge_limit() {
         *) fail 'Unsupported charge limit hook event.' ;;
     esac
 }
+
+# This hook runs from Injector's private root-staged installation directory.
+exec_qcom_monitor() {
+    worker="$INJECTOR_PLUGIN_DIR/native-charge"
+    [ -f "$worker" ] && [ ! -L "$worker" ] || fail 'Missing native charging monitor.'
+    if [ ! -x "$worker" ]; then
+        chmod 700 "$worker" || fail 'Cannot prepare native charging monitor.'
+    fi
+    exec "$worker"
+}

@@ -380,6 +380,10 @@ class BatteryChargeLimitTest(unittest.TestCase):
 
 
 SUSPEND_DRIVER = r'''
+# Shell parity and fault-injection suite; the real dispatcher is tested separately.
+exec_qcom_monitor() {
+    suspend_charge_limit monitor "$supply_class" "$devices_root" "$TEST_QCOM" "$state_dir" "$firmware" "$TEST_BOOT"
+}
 id() { cat "$TEST_UID_FILE"; }
 getprop() { printf '%s\n' "$TEST_FIRMWARE"; }
 
@@ -460,7 +464,8 @@ class XiaomiInputSuspendTest(unittest.TestCase):
         self.uid.write_text('0\n')
         self.monitor_log = self.root / 'monitor.log'
         self.env = dict(os.environ, INJECTOR_PLUGIN_DIR=str(package), PLUGIN_STATE_DIR=str(self.state),
-                        TEST_FIRMWARE=self.FIRMWARE, TEST_WRITES=str(self.writes), TEST_UID_FILE=str(self.uid),
+                        TEST_FIRMWARE=self.FIRMWARE, TEST_QCOM=str(qcom), TEST_BOOT=str(boot),
+                        TEST_WRITES=str(self.writes), TEST_UID_FILE=str(self.uid),
                         TEST_START_FAILURE=str(self.root / 'start-failure'))
 
     def hook(self, event, *, driver='', firmware=None, code=0):

@@ -24,8 +24,8 @@ REPOSITORY = "https://github.com/SmallThingz/injector-plugins"
 ARCHIVE_LIMIT = 128 * 1024 * 1024
 COMMON = ("plugin.json", "hook.sh", "README.md", "NOTICE.md")
 PACKAGE_FILES = {
-    "battery-charge-limit": COMMON + ("thresholds.sh", "input-suspend.sh", "session.sh"),
-    "cpu-control": COMMON,
+    "battery-charge-limit": COMMON + ("thresholds.sh", "input-suspend.sh", "session.sh", "native-charge"),
+    "cpu-control": ("plugin.json", "cpu-control-native", "README.md", "NOTICE.md"),
     "caffeine": ("plugin.json", "acquire.json", "release.json"),
 }
 CATALOG_DESCRIPTIONS = {
@@ -140,15 +140,21 @@ def validate_manifest(plugin, members):
                 not set(choices) <= DURATIONS or duration[0].get("default") not in choices):
             raise ValueError("Unsupported native duration options/default")
     else:
-        if (manifest.get("backend"), manifest.get("runtime")) != ("root", "shell"):
-            raise ValueError("Power hooks require root/shell")
-        shell_closure(members)
         if plugin == "battery-charge-limit":
+            if (manifest.get("backend"), manifest.get("runtime")) != ("root", "shell"):
+                raise ValueError("Battery requires root/shell")
+            shell_closure(members)
+            if sha256(members["native-charge"]) != "00e0cb7c410c1e9029f119f36650d040fd9e404bf12b9995a974c3f1556ac5b1":
+                raise ValueError("Battery monitor differs from the reviewed arm64 build")
             if manifest.get("session") != {"protocol": "stdin-lease-v1", "hook": "hook.sh"}:
                 raise ValueError("Expected battery stdin-lease-v1 session hook")
             if manifest.get("triggers"):
                 raise ValueError("Battery session must not declare automated triggers")
         else:
+            if (manifest.get("backend"), manifest.get("runtime")) != ("root", "binary") or set(hooks.values()) != {"cpu-control-native"}:
+                raise ValueError("CPU hooks require the reviewed root/binary executable")
+            if sha256(members["cpu-control-native"]) != "5f4383057a1ba54057a0a6248463dac731283a7de92f1ec83c5a9508fa83fad2":
+                raise ValueError("CPU binary differs from the qualified arm64 build")
             inputs = manifest.get("ui", {}).get("inputs", [])
             by_id = {item["id"]: item for item in inputs}
             if len(by_id) != len(inputs):
@@ -195,7 +201,7 @@ def package(plugin, pin=None, source_root=None):
         for name, data in sorted(members.items()):
             entry = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
             entry.create_system = 3
-            entry.external_attr = 0o100644 << 16
+            entry.external_attr = (0o100755 if name in ("cpu-control-native", "native-charge") else 0o100644) << 16
             archive.writestr(entry, data)
     data = stream.getvalue()
     if len(data) > ARCHIVE_LIMIT:

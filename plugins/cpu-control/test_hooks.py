@@ -76,8 +76,8 @@ class CpuControl(unittest.TestCase):
     def test_manifest_and_defaults(self):
         manifest = json.loads((PACKAGE / 'plugin.json').read_text())
         self.assertEqual(manifest['backend'], 'root')
-        self.assertEqual(manifest['runtime'], 'shell')
-        self.assertEqual(set(manifest['hooks'].values()), {'hook.sh'})
+        self.assertEqual(manifest['runtime'], 'binary')
+        self.assertEqual(set(manifest['hooks'].values()), {'cpu-control-native'})
         self.assertEqual(set(manifest['hooks']), {'enable', 'disable', 'run'})
         self.assertEqual(manifest['ui']['layout'], 'accordion')
         self.assertNotIn('headline', manifest['ui']['presentation'])

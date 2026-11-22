@@ -99,10 +99,12 @@ class PackagingTests(unittest.TestCase):
             "exit 89 # packaging must never execute this\n")
         for name in ("thresholds.sh", "session.sh", "input-suspend.sh"):
             self.write("plugins/battery-charge-limit/" + name, "# reviewed helper " + name + "\n")
+        self.write("plugins/battery-charge-limit/native-charge", (ROOT / "plugins/battery-charge-limit/native-charge").read_bytes())
+        self.write("plugins/cpu-control/cpu-control-native", (ROOT / "plugins/cpu-control/cpu-control-native").read_bytes())
         cpu = {
             "id": "cpu-control", "name": "CPU frequency control", "version": "0.1",
-            "backend": "root", "runtime": "shell",
-            "hooks": dict.fromkeys(("enable", "run", "disable"), "hook.sh"),
+            "backend": "root", "runtime": "binary",
+            "hooks": dict.fromkeys(("enable", "run", "disable"), "cpu-control-native"),
             "ui": {"layout": "accordion", "inputs": []},
         }
         for policy in ("policy0", "policy4", "policy7"):
@@ -141,8 +143,8 @@ class PackagingTests(unittest.TestCase):
     def test_deterministic_packages_exact_closure_and_metadata(self):
         expected = {
             "battery-charge-limit": {"plugin.json", "hook.sh", "README.md", "NOTICE.md",
-                                    "thresholds.sh", "input-suspend.sh", "session.sh"},
-            "cpu-control": {"plugin.json", "hook.sh", "README.md", "NOTICE.md"},
+                                    "thresholds.sh", "input-suspend.sh", "session.sh", "native-charge"},
+            "cpu-control": {"plugin.json", "cpu-control-native", "README.md", "NOTICE.md"},
             "caffeine": {"plugin.json", "acquire.json", "release.json"},
         }
         self.assertEqual(set(pack.PACKAGE_FILES), set(expected))
@@ -157,7 +159,7 @@ class PackagingTests(unittest.TestCase):
                 self.assertIsNone(archive.testzip())
                 for member in archive.infolist():
                     self.assertEqual(member.date_time, (2026, 1, 1, 0, 0, 0))
-                    self.assertEqual(member.external_attr >> 16, 0o100644)
+                    self.assertEqual(member.external_attr >> 16, 0o100755 if member.filename in ("cpu-control-native", "native-charge") else 0o100644)
                     self.assertEqual(member.compress_type, zipfile.ZIP_STORED)
                     self.assertEqual(archive.read(member), (self.repo / "plugins" / plugin / member.filename).read_bytes())
         self.cli("packages", "--check")
@@ -208,6 +210,11 @@ class PackagingTests(unittest.TestCase):
                 path.write_text(source)
                 with self.assertRaisesRegex(ValueError, "dependency|dynamic"):
                     pack.package("battery-charge-limit")
+
+    def test_battery_monitor_hash_checked(self):
+        self.write("plugins/battery-charge-limit/native-charge", b"changed")
+        with self.assertRaisesRegex(ValueError, "reviewed arm64 build"):
+            pack.package("battery-charge-limit")
 
     def test_native_descriptor_inputs_and_triggers_checked(self):
         original = (self.repo / "plugins/caffeine/plugin.json").read_bytes()
@@ -297,7 +304,7 @@ class PackagingTests(unittest.TestCase):
             pack.release_pin(self.pin_path)
         self.pin["assets"]["cpu-control.zip"] = self.before["packages/cpu-control.zip"]
         self.save_pin()
-        self.write("plugins/cpu-control/hook.sh", "# drift\n")
+        self.write("plugins/cpu-control/cpu-control-native", "# drift\n")
         with self.assertRaisesRegex(ValueError, "Working"):
             pack.release_pin(self.pin_path)
 
@@ -337,15 +344,15 @@ class PackagingTests(unittest.TestCase):
             pack.release_pin(self.pin_path)
 
     def test_symlink_source_output_and_committed_blob_rejected(self):
-        source = self.repo / "plugins/cpu-control/hook.sh"
+        source = self.repo / "plugins/cpu-control/cpu-control-native"
         source.unlink()
         source.symlink_to("README.md")
         with self.assertRaisesRegex(ValueError, "Symlink"):
             pack.package("cpu-control")
-        self.git("add", "plugins/cpu-control/hook.sh")
+        self.git("add", "plugins/cpu-control/cpu-control-native")
         bad = self.commit("Fixture symlink")
         with self.assertRaisesRegex(ValueError, "regular blob"):
-            pack.committed_file(bad, Path("plugins/cpu-control/hook.sh"))
+            pack.committed_file(bad, Path("plugins/cpu-control/cpu-control-native"))
         output = self.repo / ".tmp/link"
         output.symlink_to(self.repo / "packages", target_is_directory=True)
         with self.assertRaisesRegex(ValueError, "Symlink"):
@@ -380,7 +387,7 @@ class PackagingTests(unittest.TestCase):
         source = self.repo / ".tmp/reviewed"
         shutil.copytree(self.repo / "plugins", source / "plugins")
         self.cli("packages", "--source-root", source, "--check")
-        self.write("plugins/cpu-control/hook.sh", "# changed working source\n")
+        self.write("plugins/cpu-control/cpu-control-native", "# changed working source\n")
         self.cli("packages", "--check", ok=False)
         self.cli("packages", "--source-root", source, "--check")
         self.assertEqual(self.before["packages/cpu-control.zip"],

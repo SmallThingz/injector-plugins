@@ -15,6 +15,11 @@
   "triggers": {
     "boot": false
   },
+  "quickSettings": {
+    "icon": "coffee",
+    "behavior": "cycle",
+    "durationInput": "duration"
+  },
   "ui": {
     "layout": "accordion",
     "presentation": {
