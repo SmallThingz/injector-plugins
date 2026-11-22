@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "e17de5d108d87b4a84289988c430a1d8f523b416",
+  "tag": "plugins-20261123-miui-recovery-2",
+  "assets": {
+    "miui-activity-retention.zip": "e19493882831da15dbb03bb9219bb41c07c1a9202d5ea23ffcdc1b2f3255f10e"
+  }
+}
