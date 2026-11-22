@@ -436,6 +436,83 @@ public final class TxnTest {
         refused(() -> Txn.requireEnabled(ambiguous.dir));
     }
 
+    private static void expectReadOnlyProof(Host h, String state) throws Exception {
+        Path journal = h.dir.resolve(JOURNAL);
+        Path marker = h.dir.resolve(UPDATE);
+        byte[] before = Files.readAllBytes(journal);
+        byte[] update = Files.exists(marker) ? Files.readAllBytes(marker) : null;
+        List<String> calls = new ArrayList<>(h.calls);
+        String proof = Txn.inspectState(h.dir, BOOT, h);
+        if (!proof.matches(state + " [0-9a-f]{64}")) throw new AssertionError(proof);
+        expect(calls, h.calls);
+        sameBytes(before, Files.readAllBytes(journal));
+        if (update != null) sameBytes(update, Files.readAllBytes(marker));
+    }
+
+    private static void lifecycleProofAndRepeatCycles(Path root) throws Exception {
+        Host h = new Host(root, "lifecycle-proof");
+        refused(() -> Txn.inspectState(h.dir, BOOT, h));
+        for (int cycle = 0; cycle < 2; cycle++) {
+            h.enable(BOOT, DECLARED);
+            expectReadOnlyProof(h, "ACTIVE");
+            h.disable(BOOT);
+            expectReadOnlyProof(h, "INACTIVE");
+            expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
+        }
+        expect(8, h.writes);
+        refused(() -> Txn.inspectState(h.dir, NEXT_BOOT, h));
+        h.values.get(HIDE).add("foreign.New");
+        refused(() -> Txn.inspectState(h.dir, BOOT, h));
+        expect(8, h.writes);
+
+        Host migrated = new Host(root, "migrated-proof");
+        migrated.legacy(BOOT, 3, 0, true);
+        expectReadOnlyProof(migrated, "ACTIVE");
+        migrated.configure();
+        expectReadOnlyProof(migrated, "ACTIVE");
+        migrated.disable(BOOT);
+        expectReadOnlyProof(migrated, "INACTIVE");
+
+        Host interrupted = new Host(root, "interrupted-proof");
+        interrupted.loseReplyOn = 1;
+        refused(() -> interrupted.enable(BOOT, DECLARED));
+        byte[] pending = Files.readAllBytes(interrupted.dir.resolve(JOURNAL));
+        refused(() -> Txn.inspectState(interrupted.dir, BOOT, interrupted));
+        sameBytes(pending, Files.readAllBytes(interrupted.dir.resolve(JOURNAL)));
+        expect(1, interrupted.writes);
+    }
+
+    private static void inspectPartialRestore(Path root) throws Exception {
+        Host h = new Host(root, "partial-restore-proof");
+        h.legacy(BOOT, 3, 0, true);
+        h.configure();
+        List<List<String>> enabled = h.pair();
+        h.loseReplyOn = h.writes + 2;
+        refused(() -> h.disable(BOOT));
+        expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
+
+        Path journal = h.dir.resolve(JOURNAL);
+        Path marker = h.dir.resolve(UPDATE);
+        byte[] pending = Files.readAllBytes(journal);
+        byte[] migration = Files.readAllBytes(marker);
+        List<String> calls = new ArrayList<>(h.calls);
+        refused(() -> Txn.inspectState(h.dir, BOOT, h));
+        refused(() -> Txn.inspectRecovery(h.dir, NEXT_BOOT, h));
+        expect("TARGET", Txn.inspectRecovery(h.dir, BOOT, h).split(" ")[0]);
+        Txn.requireRepairable(h.dir, BOOT, h);
+
+        h.values.put(HIDE, enabled.get(0));
+        expect("CHECKPOINT", Txn.inspectRecovery(h.dir, BOOT, h).split(" ")[0]);
+        Txn.requireRepairable(h.dir, BOOT, h);
+
+        h.values.get(SHOW).add("foreign.New");
+        expect("DIVERGED", Txn.inspectRecovery(h.dir, BOOT, h).split(" ")[0]);
+        refused(() -> Txn.requireRepairable(h.dir, BOOT, h));
+        expect(calls, h.calls);
+        sameBytes(pending, Files.readAllBytes(journal));
+        sameBytes(migration, Files.readAllBytes(marker));
+    }
+
     public static void main(String[] args) throws Exception {
         Path root = Paths.get(args[0]);
         exactCutoverAndRefresh(root);
@@ -443,6 +520,8 @@ public final class TxnTest {
         rollbackAndUnknown(root);
         resumeConfirmedRefresh(root);
         refreshConflictsAndBoot(root);
+        lifecycleProofAndRepeatCycles(root);
+        inspectPartialRestore(root);
         System.out.println("TxnTest passed");
     }
 }

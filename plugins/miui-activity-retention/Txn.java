@@ -1,6 +1,7 @@
 import java.io.*;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -147,6 +148,94 @@ public final class Txn {
             }
         }
         throw new IOException("Update outcome is unresolved");
+    }
+
+    /** Current controller proof. An unresolved operation cannot supply a terminal proof. */
+    public static String inspectState(Path dir, String boot, IO io) throws Exception {
+        identity(boot, false);
+        Path journal = dir.resolve(JOURNAL);
+        Path marker = dir.resolve(UPDATE);
+        if (!Files.isRegularFile(journal, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("No regular transaction journal");
+        boolean hasMarker = !Files.notExists(marker, LinkOption.NOFOLLOW_LINKS);
+        if (hasMarker && !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Invalid migration journal");
+
+        byte[] bytes = readBytes(journal);
+        Active active;
+        if (magic(bytes) == TXN1) {
+            active = readLegacy(bytes, boot);
+            if (hasMarker) {
+                Update update = readUpdate(readBytes(marker));
+                if (!update.previous || !update.boot.equals(boot) || !Arrays.equals(update.legacy, bytes)
+                        || !update.before.equals(active.image))
+                    throw new IOException("Legacy migration is unresolved");
+            }
+        } else {
+            active = readActive(bytes);
+            requireCommittedUpdate(dir, active);
+        }
+        if (!active.boot.equals(boot)) throw new IOException("Journal belongs to an earlier boot");
+        if (active.pending || active.reconciling) throw new IOException("A previous write is unresolved");
+        if (!active.enabled && active.owned.stream().anyMatch(list -> !list.isEmpty()))
+            throw new IOException("Inactive journal still owns entries");
+        requireCurrent(io, active.image);
+        return (active.enabled ? "ACTIVE " : "INACTIVE ") + digest(bytes);
+    }
+
+    /** Compare a pending journal with live values, without resolving or advancing it. */
+    public static String inspectRecovery(Path dir, String boot, IO io) throws Exception {
+        return observeRecovery(dir, boot, io, false);
+    }
+
+    /** The host may use this for an explicitly reviewed code-only handoff. */
+    public static void requireRepairable(Path dir, String boot, IO io) throws Exception {
+        observeRecovery(dir, boot, io, true);
+    }
+
+    private static String observeRecovery(Path dir, String boot, IO io, boolean requireMatch) throws Exception {
+        identity(boot, false);
+        Path journal = dir.resolve(JOURNAL);
+        Path marker = dir.resolve(UPDATE);
+        if (!Files.isRegularFile(journal, LinkOption.NOFOLLOW_LINKS)
+                || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Recovery requires both regular journals");
+        byte[] bytes = readBytes(journal);
+        byte[] updateBytes = readBytes(marker);
+        Active active = readActive(bytes);
+        Update update = readUpdate(updateBytes);
+        if (!boot.equals(active.boot) || !boot.equals(update.boot) || update.previous
+                || !active.updateId.equals(update.id) || !active.pending || !active.reconciling)
+            throw new IOException("Pending checkpoint does not match the current migration and boot");
+        if (requireMatch && (!active.enabled || active.owned.get(0).isEmpty() || !active.owned.get(1).isEmpty()))
+            throw new IOException("Checkpoint does not match the partial restore shape");
+
+        List<List<String>> observed = stableSnapshot(io);
+        List<List<String>> proposed = plan(active, active.image, Collections.emptySet(), false).image;
+        String comparison = observed.equals(proposed) ? "TARGET"
+                : observed.equals(active.image) ? "CHECKPOINT" : "DIVERGED";
+        if (requireMatch && comparison.equals("DIVERGED"))
+            throw new IOException("Live lists do not match either reviewed image");
+        return comparison + " " + digest(bytes) + " " + digest(updateBytes)
+                + " " + digestPair(observed) + " " + digestPair(proposed)
+                + " " + observed.get(0).size() + " " + observed.get(1).size();
+    }
+
+    private static String digestPair(List<List<String>> pair) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(bytes)) {
+            writePair(out, pair);
+        }
+        return digest(bytes.toByteArray());
+    }
+
+    private static String digest(byte[] bytes) throws Exception {
+        StringBuilder hex = new StringBuilder(64);
+        for (byte value : MessageDigest.getInstance("SHA-256").digest(bytes)) {
+            hex.append(Character.forDigit((value & 0xff) >>> 4, 16));
+            hex.append(Character.forDigit(value & 0xf, 16));
+        }
+        return hex.toString();
     }
 
     private static void checkBeforeConfigureWrite(Path journal, Path marker, Update update,
