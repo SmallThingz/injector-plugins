@@ -80,66 +80,10 @@ class PackagingTests(unittest.TestCase):
                 not set(path.relative_to(self.repo).parts) & {".git", ".tmp"}}
 
     def populate(self):
-        for plugin in ("battery-charge-limit", "cpu-control"):
-            base = "plugins/" + plugin + "/"
-            self.write(base + "README.md", "Reviewed source documentation\n")
-            self.write(base + "NOTICE.md", "Source attribution\n")
-            self.write(base + "test_hooks.py", "# tracked provenance; not shipped\n")
-            self.write(base + "hook.sh", "#!/system/bin/sh\nexit 89 # packaging must never execute this\n")
-        battery = {
-            "id": "battery-charge-limit", "name": "Battery charge limit", "version": "0.1",
-            "backend": "root", "runtime": "shell",
-            "hooks": dict.fromkeys(("enable", "run", "disable"), "hook.sh"),
-            "session": {"protocol": "stdin-lease-v1", "hook": "hook.sh"},
-        }
-        self.write("plugins/battery-charge-limit/plugin.json", pack.encoded(battery))
-        self.write("plugins/battery-charge-limit/hook.sh",
-            '#!/system/bin/sh\n. "${INJECTOR_PLUGIN_DIR:?}/thresholds.sh"\n'
-            '. "$INJECTOR_PLUGIN_DIR/session.sh"\n. "$INJECTOR_PLUGIN_DIR/input-suspend.sh"\n'
-            "exit 89 # packaging must never execute this\n")
-        for name in ("thresholds.sh", "session.sh", "input-suspend.sh"):
-            self.write("plugins/battery-charge-limit/" + name, "# reviewed helper " + name + "\n")
-        self.write("plugins/battery-charge-limit/native-charge", (ROOT / "plugins/battery-charge-limit/native-charge").read_bytes())
-        self.write("plugins/cpu-control/cpu-control-native", (ROOT / "plugins/cpu-control/cpu-control-native").read_bytes())
-        cpu = {
-            "id": "cpu-control", "name": "CPU frequency control", "version": "0.1",
-            "backend": "root", "runtime": "binary",
-            "hooks": dict.fromkeys(("enable", "run", "disable"), "cpu-control-native"),
-            "ui": {"layout": "accordion", "inputs": []},
-        }
-        for policy in ("policy0", "policy4", "policy7"):
-            cpu["ui"]["inputs"].extend([
-                {"id": policy + "_governor", "type": "choice", "default": "system",
-                 "options": [{"value": "system", "label": "System setting"}, {"value": "walt", "label": "walt"}]},
-                {"id": policy + "_max_khz", "type": "choice", "default": "system",
-                 "options": [{"value": "system", "label": "System setting"}, {"value": "441600", "label": "441.6 MHz"}]},
-            ])
-        self.write("plugins/cpu-control/plugin.json", pack.encoded(cpu))
-        caffeine = {
-            "id": "caffeine", "name": "Caffeine", "version": "0.1", "backend": "app", "runtime": "native",
-            "hooks": {"enable": "acquire.json", "run": "acquire.json", "disable": "release.json"},
-            "triggers": {"boot": False},
-            "ui": {"inputs": [{"id": "duration", "type": "choice", "default": "1800",
-                              "options": [{"value": "1800", "label": "30 min"},
-                                          {"value": "indefinite", "label": "Indefinite"}]}]},
-        }
-        self.write("plugins/caffeine/plugin.json", pack.encoded(caffeine))
-        self.write("plugins/caffeine/acquire.json", pack.encoded({
-            "action": "keep-screen-on", "operation": "acquire", "durationInput": "duration"}))
-        self.write("plugins/caffeine/release.json", pack.encoded({"action": "keep-screen-on", "operation": "release"}))
-        retention = {
-            "id": "miui-activity-retention", "name": "MIUI window retention", "version": "0.1",
-            "backend": "root", "runtime": "shell",
-            "hooks": dict.fromkeys(("enable", "disable"), "hook.sh"),
-            "quickSettings": {"icon": "windows", "behavior": "toggle"},
-            "ui": {"inputs": [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]},
-        }
-        base = "plugins/miui-activity-retention/"
-        payload = b"Reviewed fixture payload"
-        self.write(base + "plugin.json", pack.encoded(retention))
-        self.write(base + "hook.sh", "# packaging must not execute this\n")
-        self.write(base + "activity-lists.jar", payload)
-        self.write(base + "payload.sha256", f"{pack.sha256(payload)}  activity-lists.jar\n")
+        for filename in ("package-native.py", "native-candidates.json"):
+            shutil.copy2(ROOT / filename, self.repo / filename)
+        for plugin in pack.PACKAGE_FILES:
+            shutil.copytree(ROOT / "plugins" / plugin, self.repo / "plugins" / plugin)
 
     def change_manifest(self, plugin, update):
         path = self.repo / "plugins" / plugin / "plugin.json"
@@ -155,9 +99,8 @@ class PackagingTests(unittest.TestCase):
 
     def test_deterministic_packages_exact_closure_and_metadata(self):
         expected = {
-            "battery-charge-limit": {"plugin.json", "hook.sh", "README.md", "NOTICE.md",
-                                    "thresholds.sh", "input-suspend.sh", "session.sh", "native-charge"},
-            "cpu-control": {"plugin.json", "cpu-control-native", "README.md", "NOTICE.md"},
+            "battery-charge-limit": {"plugin.json", "NOTICE.md", "native-charge"},
+            "cpu-control": {"plugin.json", "native-power", "NOTICE.md"},
             "caffeine": {"plugin.json", "acquire.json", "release.json"},
             "miui-activity-retention": {"plugin.json", "hook.sh", "activity-lists.jar", "payload.sha256"},
         }
@@ -172,9 +115,10 @@ class PackagingTests(unittest.TestCase):
                 self.assertEqual(archive.namelist(), sorted(names))
                 self.assertIsNone(archive.testzip())
                 for member in archive.infolist():
-                    self.assertEqual(member.date_time, (2026, 1, 1, 0, 0, 0))
-                    self.assertEqual(member.external_attr >> 16, 0o100755 if member.filename in ("cpu-control-native", "native-charge") else 0o100644)
-                    self.assertEqual(member.compress_type, zipfile.ZIP_STORED)
+                    native = plugin in pack.native.MEMBERS
+                    self.assertEqual(member.date_time, (1980 if native else 2026, 1, 1, 0, 0, 0))
+                    self.assertEqual(member.external_attr >> 16, 0o100755 if member.filename in ("native-power", "native-charge") else 0o100644)
+                    self.assertEqual(member.compress_type, zipfile.ZIP_DEFLATED if native else zipfile.ZIP_STORED)
                     self.assertEqual(archive.read(member), (self.repo / "plugins" / plugin / member.filename).read_bytes())
         self.cli("packages", "--check")
         self.assertEqual(self.before, self.tree())
@@ -186,7 +130,13 @@ class PackagingTests(unittest.TestCase):
         catalog = json.loads((self.repo / ".tmp/catalog-new.json").read_text())
         self.assertEqual([x["release"]["asset"] for x in catalog["plugins"]],
                          ["battery-charge-limit.zip", "cpu-control.zip", "caffeine.zip", "miui-activity-retention.zip"])
-        self.assertTrue(all(x["release"]["commit"] == self.a for x in catalog["plugins"]))
+        for entry in catalog["plugins"]:
+            release = entry["release"]
+            self.assertEqual(release["commit"], self.a)
+            self.assertEqual(release["sha256"], self.pin["assets"][release["asset"]])
+            manifest = json.loads((self.repo / release["manifestPath"]).read_bytes())
+            self.assertEqual(release["asset"], manifest["id"] + ".zip")
+            self.assertEqual(manifest["version"], "0.1.0")
         self.assertEqual(self.before, self.tree())
         self.cli("verify", "--release", self.pin_path, "--catalog", ".tmp/catalog-new.json")
         # Commit B changes only catalog/release metadata; source pin still targets A.
@@ -228,6 +178,14 @@ class PackagingTests(unittest.TestCase):
 
     def test_retention_picker_toggle_hook_and_payload_are_checked(self):
         plugin = "miui-activity-retention"
+        retention = {
+            "id": "miui-activity-retention", "name": "MIUI window retention", "version": "0.1.0", "description": "Fixture",
+            "backend": "root", "runtime": "shell",
+            "hooks": dict.fromkeys(("enable", "disable"), "hook.sh"),
+            "quickSettings": {"icon": "windows", "behavior": "toggle"},
+            "ui": {"inputs": [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]},
+        }
+        self.write("plugins/miui-activity-retention/plugin.json", pack.encoded(retention))
         original = (self.repo / "plugins/miui-activity-retention/plugin.json").read_bytes()
         changes = [
             (lambda m: m["ui"]["inputs"][0].update(type="text"), "activities picker"),
@@ -261,11 +219,12 @@ class PackagingTests(unittest.TestCase):
             pack.package(plugin)
 
     def test_missing_helper_and_late_descriptor_failure_write_nothing(self):
-        helper = self.repo / "plugins/battery-charge-limit/session.sh"
+        helper = self.repo / "plugins/battery-charge-limit/native-charge"
+        original = helper.read_bytes()
         helper.unlink()
         self.cli("packages", "--package-dir", ".tmp/out", ok=False)
         self.assertFalse((self.repo / ".tmp/out").exists())
-        self.write("plugins/battery-charge-limit/session.sh", "# repaired\n")
+        helper.write_bytes(original)
         self.write("plugins/caffeine/release.json", '{"action":"keep-screen-on","operation":"acquire"}')
         self.cli("packages", "--package-dir", ".tmp/out", ok=False)
         self.assertFalse((self.repo / ".tmp/out").exists())
@@ -274,30 +233,22 @@ class PackagingTests(unittest.TestCase):
                              pack.sha256((self.repo / pack.package_path(plugin)).read_bytes()))
 
     def test_new_unbundled_helper_and_dynamic_import_rejected(self):
-        path = self.repo / "plugins/battery-charge-limit/session.sh"
+        path = self.repo / "plugins/miui-activity-retention/hook.sh"
         for source in ('. "$INJECTOR_PLUGIN_DIR/missing.sh"\n', '. "$helper"\n'):
             with self.subTest(source=source):
                 path.write_text(source)
                 with self.assertRaisesRegex(ValueError, "dependency|dynamic"):
-                    pack.package("battery-charge-limit")
+                    pack.package("miui-activity-retention")
 
     def test_battery_monitor_hash_checked(self):
         self.write("plugins/battery-charge-limit/native-charge", b"changed")
-        with self.assertRaisesRegex(ValueError, "reviewed arm64 build"):
+        with self.assertRaisesRegex(ValueError, "Worker"):
             pack.package("battery-charge-limit")
 
     def test_screen_off_choice_must_match_acquire(self):
-        behavior = {"id": "screen_off_behavior", "type": "choice", "default": "turn_off",
-                    "options": [{"value": value} for value in ("turn_off", "pause", "restart")]}
-        self.change_manifest("caffeine", lambda m: m["ui"]["inputs"].append(behavior))
-        with self.assertRaisesRegex(ValueError, "descriptor"):
-            pack.package("caffeine")
         self.write("plugins/caffeine/acquire.json", pack.encoded({
-            "action": "keep-screen-on", "operation": "acquire", "durationInput": "duration",
-            "screenOffBehaviorInput": "screen_off_behavior"}))
-        pack.package("caffeine")
-        self.change_manifest("caffeine", lambda m: m["ui"]["inputs"][1].update(default="restart"))
-        with self.assertRaisesRegex(ValueError, "screen-off"):
+            "action": "keep-screen-on", "operation": "acquire", "durationInput": "duration"}))
+        with self.assertRaisesRegex(ValueError, "descriptor"):
             pack.package("caffeine")
 
     def test_native_descriptor_inputs_and_triggers_checked(self):
@@ -317,41 +268,56 @@ class PackagingTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     pack.package("caffeine")
 
-    def test_stale_battery_session_and_cpu_percent_schema_rejected(self):
-        self.change_manifest("battery-charge-limit", lambda m: m.pop("session"))
-        with self.assertRaisesRegex(ValueError, "session"):
-            pack.package("battery-charge-limit")
-        self.change_manifest("cpu-control", lambda m: m["ui"]["inputs"][1].update(id="policy0_percent", type="slider"))
-        with self.assertRaisesRegex(ValueError, "kHz"):
+    def test_missing_live_handler_rejected(self):
+        for plugin in pack.WORKERS:
+            self.change_manifest(plugin, lambda m: m["hooks"].pop("configure"))
+            with self.subTest(plugin=plugin), self.assertRaisesRegex(ValueError, "hook events"):
+                pack.package(plugin)
+
+    def test_version_required_for_all_four_plugins(self):
+        for plugin in pack.PACKAGE_FILES:
+            self.change_manifest(plugin, lambda m: m.update(version="0.1"))
+            with self.subTest(plugin=plugin), self.assertRaisesRegex(ValueError, "0.1.0"):
+                pack.package(plugin)
+
+    def test_release_pins_native_provenance_to_commit(self):
+        metadata = self.repo / "native-candidates.json"
+        value = json.loads(metadata.read_bytes())
+        value["packages"]["cpu-control"]["worker"]["built_from_injector_commit"] = "0" * 40
+        metadata.write_bytes(pack.encoded(value))
+        with self.assertRaisesRegex(ValueError, "provenance differs"):
+            pack.release_pin(self.pin_path)
+
+    def test_source_and_worker_mapping(self):
+        metadata = self.repo / "native-candidates.json"
+        original = json.loads(metadata.read_bytes())
+        for change in (
+            lambda r: r["source_files"].pop("plugins/cpu-control/native/src/policy.rs"),
+            lambda r: r["worker"].update(path="plugins/another/native-power"),
+            lambda r: r["source_files"]["plugins/cpu-control/native/src/main.rs"].update(upstream_path="wrong"),
+        ):
+            record = copy.deepcopy(original)
+            change(record["packages"]["cpu-control"])
+            metadata.write_bytes(pack.encoded(record))
+            with self.assertRaisesRegex(ValueError, "mapping"):
+                pack.package("cpu-control")
+        metadata.write_bytes(pack.encoded(original))
+        self.write("plugins/cpu-control/native/src/main.rs", "// changed source")
+        with self.assertRaisesRegex(ValueError, "Source differs"):
             pack.package("cpu-control")
 
-    def test_cpu_mhz_label_cannot_misrepresent_khz_value(self):
-        self.change_manifest("cpu-control", lambda m: m["ui"]["inputs"][1]["options"][1].update(label="441600 MHz"))
-        with self.assertRaisesRegex(ValueError, "MHz"):
-            pack.package("cpu-control")
+    def test_only_git_subprocesses_used_to_build_catalog(self):
+        commands = []
+        run = subprocess.run
 
-    def test_device_scoped_cpu_may_omit_read_only_policy_ceilings(self):
-        def restrict(manifest):
-            manifest["ui"]["inputs"] = [item for item in manifest["ui"]["inputs"]
-                if item["id"] not in ("policy4_max_khz", "policy7_max_khz")]
-            ceiling = next(item for item in manifest["ui"]["inputs"] if item["id"] == "policy0_max_khz")
-            ceiling["options"][1] = {"value": "1708800", "label": "1708.8 MHz"}
-        self.change_manifest("cpu-control", restrict)
-        data, _ = pack.package("cpu-control")
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            manifest = json.loads(archive.read("plugin.json"))
-            ids = {item["id"] for item in manifest["ui"]["inputs"]}
-            self.assertEqual(ids, {"policy0_governor", "policy0_max_khz", "policy4_governor", "policy7_governor"})
-        # Removing all ceiling inputs or lying about the one remaining value is
-        # still a schema error; omission is not a bypass of value validation.
-        original = (self.repo / "plugins/cpu-control/plugin.json").read_bytes()
-        self.change_manifest("cpu-control", lambda m: m["ui"]["inputs"].pop(1))
-        with self.assertRaisesRegex(ValueError, "at least one"):
-            pack.package("cpu-control")
-        self.write("plugins/cpu-control/plugin.json", original)
-        self.change_manifest("cpu-control", lambda m: m["ui"]["inputs"][1]["options"][1].update(label="1804.8 MHz"))
-        with self.assertRaisesRegex(ValueError, "MHz"):
-            pack.package("cpu-control")
+        def checked_run(command, *args, **kwargs):
+            self.assertEqual("git", command[0])
+            commands.append(command)
+            return run(command, *args, **kwargs)
+
+        with patch.object(subprocess, "run", checked_run):
+            pack.main(["build", "--release", str(self.pin_path), "--catalog", str(self.repo / ".tmp/current.json")])
+        self.assertTrue(commands)
 
     def test_pin_fields_and_unknown_assets_rejected(self):
         original = copy.deepcopy(self.pin)
@@ -388,7 +354,7 @@ class PackagingTests(unittest.TestCase):
             pack.release_pin(self.pin_path)
         self.pin["assets"]["cpu-control.zip"] = self.before["packages/cpu-control.zip"]
         self.save_pin()
-        self.write("plugins/cpu-control/cpu-control-native", "# drift\n")
+        self.write("plugins/cpu-control/native-power", "# drift\n")
         with self.assertRaisesRegex(ValueError, "Working"):
             pack.release_pin(self.pin_path)
 
@@ -397,7 +363,7 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Uncommitted"):
             pack.release_pin(self.pin_path)
         extra.unlink()
-        self.write("plugins/cpu-control/test_hooks.py", "# changed provenance\n")
+        self.write("plugins/cpu-control/native/src/main.rs", "# changed provenance\n")
         with self.assertRaisesRegex(ValueError, "Working"):
             pack.release_pin(self.pin_path)
 
@@ -428,22 +394,22 @@ class PackagingTests(unittest.TestCase):
             pack.release_pin(self.pin_path)
 
     def test_symlink_source_output_and_committed_blob_rejected(self):
-        source = self.repo / "plugins/cpu-control/cpu-control-native"
+        source = self.repo / "plugins/cpu-control/native-power"
         source.unlink()
         source.symlink_to("README.md")
         with self.assertRaisesRegex(ValueError, "Symlink"):
             pack.package("cpu-control")
-        self.git("add", "plugins/cpu-control/cpu-control-native")
+        self.git("add", "plugins/cpu-control/native-power")
         bad = self.commit("Fixture symlink")
         with self.assertRaisesRegex(ValueError, "regular blob"):
-            pack.committed_file(bad, Path("plugins/cpu-control/cpu-control-native"))
+            pack.committed_file(bad, Path("plugins/cpu-control/native-power"))
         output = self.repo / ".tmp/link"
         output.symlink_to(self.repo / "packages", target_is_directory=True)
         with self.assertRaisesRegex(ValueError, "Symlink"):
             pack.output_path(output / "cpu-control.zip")
 
     def test_catalog_output_cannot_overwrite_pins_or_sources(self):
-        for target in ("release.json", "releases/new.json", "plugins/cpu-control/plugin.json",
+        for target in ("native-candidates.json", "miui-candidate-build.json", "release.json", "releases/new.json", "plugins/cpu-control/plugin.json",
                        "packages/manifest.json", ".git/evil.json", "../outside.json"):
             with self.subTest(target=target), self.assertRaises(ValueError):
                 pack.output_path(self.repo / target, catalog=True)
@@ -470,8 +436,9 @@ class PackagingTests(unittest.TestCase):
         # The explicit source option is read-only with --check. No .tmp candidate auto-discovery.
         source = self.repo / ".tmp/reviewed"
         shutil.copytree(self.repo / "plugins", source / "plugins")
+        shutil.copy2(self.repo / "native-candidates.json", source)
         self.cli("packages", "--source-root", source, "--check")
-        self.write("plugins/cpu-control/cpu-control-native", "# changed working source\n")
+        self.write("plugins/cpu-control/native-power", "# changed working source\n")
         self.cli("packages", "--check", ok=False)
         self.cli("packages", "--source-root", source, "--check")
         self.assertEqual(self.before["packages/cpu-control.zip"],
