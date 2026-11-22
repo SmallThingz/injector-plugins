@@ -1,0 +1,73 @@
+{
+  "id": "battery-charge-limit",
+  "name": "Battery charge limit",
+  "version": "0.1",
+  "description": "Native charge window for the supported amethyst firmware.",
+  "backend": "root",
+  "runtime": "binary",
+  "hooks": {
+    "enable": "native-charge",
+    "run": "native-charge",
+    "configure": "native-charge",
+    "inspect": "native-charge",
+    "disable": "native-charge"
+  },
+  "session": {
+    "protocol": "stdin-lease-v1",
+    "hook": "native-charge"
+  },
+  "quickSettings": {
+    "icon": "battery",
+    "behavior": "toggle"
+  },
+  "ui": {
+    "layout": "accordion",
+    "groups": [
+      {
+        "id": "charging",
+        "label": "Charge window"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "stop_percent",
+        "label": "Stop at or above",
+        "group": "charging",
+        "type": "slider",
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "default": 80
+      },
+      {
+        "id": "resume_percent",
+        "label": "Resume at or below",
+        "group": "charging",
+        "type": "slider",
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "default": 75
+      }
+    ],
+    "ranges": [
+      {
+        "id": "charge_window",
+        "label": "Charge window",
+        "lower": "resume_percent",
+        "upper": "stop_percent",
+        "unit": "%",
+        "minGap": 1
+      }
+    ],
+    "presentation": {
+      "icon": "battery",
+      "headline": "{resume_percent}\u2013{stop_percent}%",
+      "description": "Charging enforcement depends on the battery driver.",
+      "sliderUnits": {
+        "stop_percent": "%",
+        "resume_percent": "%"
+      }
+    }
+  }
+}

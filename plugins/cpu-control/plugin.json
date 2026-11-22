@@ -1,14 +1,15 @@
 {
   "id": "cpu-control",
   "name": "CPU frequency control",
-  "version": "0.1.1",
+  "version": "0.1",
   "description": "For amethyst on HyperOS OS3.0.303.0.WOPINXM. Current system frequency limits can prevent applying the efficiency-core ceiling.",
   "backend": "root",
   "runtime": "binary",
   "hooks": {
-    "enable": "cpu-control-native",
-    "run": "cpu-control-native",
-    "disable": "cpu-control-native"
+    "enable": "native-power",
+    "configure": "native-power",
+    "run": "native-power",
+    "disable": "native-power"
   },
   "ui": {
     "layout": "accordion",
