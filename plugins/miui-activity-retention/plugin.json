@@ -2,7 +2,7 @@
   "id": "miui-activity-retention",
   "name": "MIUI Floating Window Unlimiter",
   "version": "0.1.0",
-  "description": "On amethyst OS3.0.303.0.WOPINXM, applies MIUI’s floating-window retention lists to declared activities across installed apps for the current Android user. MIUI can still pin or hide windows.",
+  "description": "Adjusts MIUI’s floating-window retention lists.",
   "backend": "root",
   "runtime": "shell",
   "hooks": {
@@ -21,8 +21,10 @@
   },
   "ui": {
     "presentation": {
-      "icon": "windows"
-    }
+      "icon": "windows",
+      "description": "Patch: hide-on-new-window and restore-hidden-window activity lists, covering all installed apps for the current user. Disable restores our changes. Other MIUI limits may still apply."
+    },
+    "layout": "accordion"
   },
   "triggers": {
     "boot": true,
