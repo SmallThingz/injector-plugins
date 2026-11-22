@@ -1,8 +1,8 @@
 # Current 0.1.0 candidate
 
-Battery and CPU workers were rebuilt from `d09e2a1` using Rust 1.99.1 and Android NDK 29.0.14206865 for arm64/API 28. Their exact source maps, worker hashes and archive members are recorded in `native-candidates.json`. Both link to Android libc and libdl; neither uses a shell launcher. Caffeine remains an app-owned Android capability with native JSON actions.
+Battery was rebuilt from `3ed27bb` and CPU from `d09e2a1` using Rust 1.99.1 and Android NDK 29.0.14206865 for arm64/API 28. Their exact source maps, worker hashes and archive members are recorded in `native-candidates.json`. Both link to Android libc and libdl; neither uses a shell launcher. Caffeine remains an app-owned Android capability with native JSON actions.
 
-The new Battery build includes controller-binding checks, cold-owner exclusion and live CONFIG tests. The CPU build preserves unresolved rollback evidence. Host regressions and six native packaging checks passed. These builds have not yet been installed or physically qualified. Battery enforcement requires powered stop/resume observations; threshold readback alone is insufficient.
+The new Battery build includes controller-binding checks, cold-owner exclusion and live CONFIG tests. A final Stop read now revalidates the live attribute binding before reporting restoration; its 11 focused host recovery tests passed. The CPU build preserves unresolved rollback evidence. Host regressions and six native packaging checks passed. These builds have not yet been installed or physically qualified. Battery enforcement requires powered stop/resume observations; threshold readback alone is insufficient.
 
 MIUI presentation uses a Home accordion. Its reviewed controller now preserves pending writes and interrupted stop intent; the rebuilt JAR and private archive identities are recorded in `miui-reviewed-candidate.json`. Its previous physical failure and uncertain receipts remain unresolved; host tests and a rebuilt controller do not establish successful window behavior.
 

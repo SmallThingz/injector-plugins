@@ -36,7 +36,7 @@
         },
         "plugins/battery-charge-limit/native/src/monitor.rs": {
           "upstream_path": "plugins/native-charge/src/monitor.rs",
-          "sha256": "4130040643cd5128013e21bc6d48916c53b2c87b869b6adbc600d94f0e1d41c4"
+          "sha256": "184a05626e92f230f4fcec53ed593e8f27384df076b8037c8407c1acdd6136f4"
         },
         "plugins/battery-charge-limit/native/src/threshold.rs": {
           "upstream_path": "plugins/native-charge/src/threshold.rs",
@@ -49,24 +49,24 @@
       },
       "worker": {
         "path": "plugins/battery-charge-limit/native-charge",
-        "bytes": 350600,
-        "sha256": "2bf23170fa7962b46b79053bfe48d31d7ab37b845d329bb91982f32f9734fbcb",
+        "bytes": 350840,
+        "sha256": "6061ecaed47c3b8ea8d8e96d961a87f32418c7d7e8c2d23c0e07607f637a4561",
         "build_inputs_match_current": true,
         "abi": "arm64-v8a",
         "android_api": 28,
         "interpreter": "/system/bin/linker64",
         "toolchain": "rustc 1.99.1, Cargo 1.99.1, Android NDK 29.0.14206865",
         "rebuilt_for_this_candidate": true,
-        "built_from_plugins_commit": "d09e2a1b98182aa32edfb50fdbafc4129bf31037"
+        "built_from_plugins_commit": "3ed27bb4dbeb140d9f2210ccc492397989f1fa95"
       },
       "members": [
         "NOTICE.md",
         "native-charge",
         "plugin.json"
       ],
-      "qualification": "Android arm64 build passed; source regression tests passed. This worker has not yet been installed or physically qualified.",
+      "qualification": "Android arm64 build and 11 focused host recovery tests passed, including controller replacement during final Stop read. This worker has not been installed or physically qualified.",
       "source_repository": "https://github.com/SmallThingz/injector-plugins",
-      "source_commit": "d09e2a1b98182aa32edfb50fdbafc4129bf31037"
+      "source_commit": "3ed27bb4dbeb140d9f2210ccc492397989f1fa95"
     },
     "cpu-control": {
       "version": "0.1.0",
