@@ -1,17 +1,20 @@
 {
-  "build_source_commit": "2f70c7165e83a00d25cb6d24b8863929090e1b35",
+  "build_source_commit": "fe5d5c15564309f523a9c87210cde79ca4a60ec8",
   "version": "0.1.0",
-  "jar_sha256": "b54893d89ad7746f25ed96c25b04c5a55651d4cd259d681b7c9eb46d00d08772",
-  "zip_sha256": "11588d7da15c6009b8c8ed1d0d7fb0d7411aa677fa5f0f33c3339d49dab2e21b",
-  "zip_bytes": 25160,
+  "jar_sha256": "b5c371424cf73e4aa40853ec2e5e36c3fc7733ef657b562483632d7806ab50c0",
+  "zip_sha256": "e19493882831da15dbb03bb9219bb41c07c1a9202d5ea23ffcdc1b2f3255f10e",
+  "zip_bytes": 27274,
   "source_files": {
-    "plugins/miui-activity-retention/ActivityLists.java": "41bb464a36e0d6177887959b84fd5d689e6c3eb3f9425cad9c5ae4aefb312501",
+    "plugins/miui-activity-retention/ActivityLists.java": "e69f3340a6465bcbeafeff02a9293392eb0aa36cdabc58fca9c5ba74bd76064c",
     "plugins/miui-activity-retention/Inventory.java": "2979fb8a1af9bf2e0084509c5a86d478b0f5c25a73721a07201ef8a9b281229d",
-    "plugins/miui-activity-retention/PackageChanges.java": "8f9ac3dbc07212dafc192c7db734db4eee21f98f9c0e792ec537559f0b1a9666",
+    "plugins/miui-activity-retention/PackageChanges.java": "77a9923cbaa98ec85a8e807bf42f5b9852609e1ee40db13ecaa528602b10e471",
     "plugins/miui-activity-retention/ParcelCapacity.java": "cbb2420649d99d712550bcba53afab1dae71af061178388cbe976247649dc4f5",
-    "plugins/miui-activity-retention/Txn.java": "50a3d65b4d15bbb6eb1a99f658968bed45dc3198181a10f7803ce0d5152b7a6c"
+    "plugins/miui-activity-retention/Txn.java": "a77e1cbd1cfc78fc728f41443b665af1f7264dd60aacc9aee4c8259314223679",
+    "plugins/miui-activity-retention/hook.sh": "97ec995e6541ca7c817d737c2d92945b5342abcf6dbbb23e38dbf5a9c993d64b",
+    "plugins/miui-activity-retention/build.sh": "f328841423a5fdbda788ced4e0c40cf1beef89ee9718f9b95ac025e2ab8b5fe0",
+    "plugins/miui-activity-retention/plugin.json": "6b2d68d08608584c36dbdde62036016539c88d8644c9a534cdb0175a5b01d1ca"
   },
   "installed": false,
-  "physical_qualification": "Pending; previous unknown receipts remain unresolved. No device writes were made.",
+  "physical_qualification": "Pending. Read-only inspection 6037ab used the preceding b54893d8 bridge and observed TARGET. This candidate has not been installed or enabled.",
   "build_log": ".tmp/miui-reviewed-build.log"
 }
