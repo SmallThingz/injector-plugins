@@ -1,5 +1,6 @@
 import java.io.*;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
@@ -179,6 +180,72 @@ public final class Txn {
         throw new IOException("Update outcome is unresolved");
     }
 
+    /** Existing inspect-update/Configure handoff for a code successor, under the caller's FD9.
+     * Null selects the original TXN1 migration protocol, including inspection of its own token. */
+    static String codeUpdate(Path dir, String boot, String token, String pluginDir, IO io, boolean configure)
+            throws Exception {
+        byte[] journal = regularBytes(dir.resolve(JOURNAL));
+        int version = magic(journal);
+        if (version == TXN1) return null;
+        if (version != TXN2) throw new IOException("Code update requires a settled transaction");
+        Active active = readActive(journal);
+        if (active.updateId.equals(token)) return null;
+        if (!active.enabled || active.pending || active.reconciling || !active.boot.equals(boot))
+            throw new IOException("Code update requires same-boot ACTIVE state");
+
+        Path markerPath = dir.resolve(UPDATE);
+        byte[] marker = new byte[0];
+        if (!Files.notExists(markerPath, LinkOption.NOFOLLOW_LINKS)) {
+            marker = regularBytes(markerPath);
+            Update update = readUpdate(marker);
+            if (update.previous || !update.id.equals(active.updateId))
+                throw new IOException("Migration outcome is unresolved");
+        } else if (!active.updateId.isEmpty()) {
+            throw new IOException("Migration journal is missing");
+        }
+
+        if (pluginDir == null || !Paths.get(pluginDir).isAbsolute() || Paths.get(pluginDir).getFileName() == null)
+            throw new IOException("Missing staged generation");
+        String generation = Paths.get(pluginDir).getFileName().toString();
+        canonicalUuid(boot);
+        canonicalUuid(generation);
+        canonicalUuid(token);
+        // Fixed-width ASCII record, including the digest of an absent (empty) marker.
+        String expected = String.join("\n", "MCU1", boot, generation, token, digest(journal), digest(marker));
+        Path path = dir.resolve("activity-code-update.receipt");
+        boolean applied = false;
+        if (!Files.notExists(path, LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) != expected.length())
+                throw new IOException("Invalid code update receipt");
+            String saved = new String(regularBytes(path), StandardCharsets.US_ASCII);
+            String[] fields = saved.split("\n", -1);
+            if (fields.length != 6 || !fields[0].equals("MCU1")
+                    || !fields[4].matches("[a-f0-9]{64}") || !fields[5].matches("[a-f0-9]{64}"))
+                throw new IOException("Invalid code update receipt");
+            canonicalUuid(fields[1]);
+            canonicalUuid(fields[2]);
+            canonicalUuid(fields[3]);
+            applied = saved.equals(expected);
+            if (!applied && (generation.equals(fields[2]) || token.equals(fields[3])))
+                throw new IOException("Code update receipt does not match this operation or state");
+        }
+
+        requireCurrent(io, active.image);
+        if (applied) return "APPLIED";
+        if (!configure) return "PREVIOUS";
+        save(path, out -> out.write(expected.getBytes(StandardCharsets.US_ASCII)));
+        return "APPLIED";
+    }
+
+    private static void canonicalUuid(String value) throws IOException {
+        try {
+            if (value != null && UUID.fromString(value).toString().equals(value)) return;
+        } catch (IllegalArgumentException invalid) {
+            // Never echo strings read from a malformed receipt.
+        }
+        throw new IOException("Invalid code update identity");
+    }
+
     /** Current controller proof. An unresolved operation cannot supply a terminal proof. */
     public static String inspectState(Path dir, String boot, IO io) throws Exception {
         identity(boot, false);
@@ -266,12 +333,6 @@ public final class Txn {
             if (!Arrays.equals(journalBytes, regularBytes(journal))
                     || !Arrays.equals(markerBytes, regularBytes(marker)))
                 throw new IOException("Recovery journals changed during inventory");
-        }
-
-        private static byte[] regularBytes(Path path) throws IOException {
-            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
-                throw new IOException("Recovery requires both regular journals");
-            return readBytes(path);
         }
     }
 
@@ -831,6 +892,12 @@ public final class Txn {
         } finally {
             Files.deleteIfExists(file);
         }
+    }
+
+    private static byte[] regularBytes(Path path) throws IOException {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("Expected regular transaction file");
+        return readBytes(path);
     }
 
     private static byte[] readBytes(Path path) throws IOException {

@@ -106,9 +106,13 @@ public final class ActivityLists implements Txn.IO {
                 System.out.println("REPAIRABLE " + updateId);
                 return;
             }
-            System.out.println(Txn.inspectUpdate(state, boot, updateId, controller) + " " + updateId);
+            String proof = Txn.codeUpdate(state, boot, updateId, System.getenv("INJECTOR_PLUGIN_DIR"), controller, false);
+            if (proof == null) proof = Txn.inspectUpdate(state, boot, updateId, controller);
+            System.out.println(proof + " " + updateId);
             return;
         }
+        if (event.equals("configure") && Txn.codeUpdate(state, boot, updateId,
+                System.getenv("INJECTOR_PLUGIN_DIR"), controller, true) != null) return;
         if (event.equals("disable")) {
             stage("restore started");
             Txn.run(state, boot, "disable", Collections.emptyList(), controller);

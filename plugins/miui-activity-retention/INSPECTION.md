@@ -105,3 +105,11 @@ printf '%s\n' "$out"
 ```
 
 For a handset check after the benign path is reviewed, use the reviewed wrapper and exact fresh bridge/checksum in a private immutable stage, with the existing installation's state directory. Use `inspect-recovery` only, with a fresh challenge and a bounded existing authorized invocation. Compare both journal hashes before and after. Skip rather than bootstrap an absent state or lock, retry a denied backend, or switch to a mutating event.
+
+### Enabled code-only update
+
+The reviewed package-change installation can hand off its settled controller to the diagnostic successor through the existing catalog update protocol. The host checks the predecessor ZIP, keeps the installation claim, and supplies the staged generation and a fresh update token. The hook holds the existing activity-retention lock for each invocation.
+
+For a same-boot enabled TXN2 journal, the candidate verifies the committed migration identity when present and compares two full ordered live getter pairs against the active image. Initial inspection returns `PREVIOUS <token>`. Configure repeats the check and atomically records the boot, generation, token and SHA-256 of both journal files in `activity-code-update.receipt`. It performs zero setters and skips inventory. A matching subsequent inspection returns `APPLIED <token>` only after verifying the live state again. An identical Configure leaves the receipt untouched. The host can settle a lost response by inspection.
+
+Pending or inactive state, drift, an invalid receipt or conflicting identities prevent confirmation. A later staged generation needs a fresh token. TXN1 retains its original migration protocol. Normal Enable, Disable, boot and interval use the existing transaction and readback logic.
