@@ -213,7 +213,7 @@ class PackagingTests(unittest.TestCase):
             manifest = json.loads(archive.read("plugin.json"))
         self.assertFalse(manifest["ui"].get("inputs"))
         self.assertEqual(manifest["version"], "0.1.0")
-        self.assertEqual(manifest["triggers"], {"boot": True, "intervalMinutes": 15})
+        self.assertEqual(manifest["triggers"], {"boot": True, "intervalMinutes": 15, "packageChanges": True})
         self.change_manifest(plugin, lambda value: value["triggers"].update(waitForRoot=True))
         with self.assertRaisesRegex(ValueError, "refresh triggers"):
             pack.package(plugin)

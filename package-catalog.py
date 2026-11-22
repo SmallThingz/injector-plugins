@@ -134,7 +134,12 @@ def validate_manifest(plugin, members):
                     "fromSha256": "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337",
                     "inspect": "hook.sh"}:
                 raise ValueError("Unexpected MIUI update source or inspection hook")
-            if manifest.get("triggers") != {"boot": True, "intervalMinutes": 15} or "session" in manifest:
+            triggers = manifest.get("triggers")
+            expected = {"boot": True, "intervalMinutes": 15}
+            if isinstance(triggers, dict) and "packageChanges" in triggers:
+                expected["packageChanges"] = True
+            if (triggers != expected or triggers["boot"] is not True
+                    or triggers.get("packageChanges", True) is not True or "session" in manifest):
                 raise ValueError("Expected MIUI package refresh triggers")
         elif manifest.get("triggers") or "session" in manifest:
             raise ValueError("MIUI retention requires explicit toggles")

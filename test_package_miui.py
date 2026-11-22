@@ -38,6 +38,26 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pack.validate_manifest(plugin, dict(members, **{"activity-lists.jar": b"wrong payload"}))
 
+    def test_package_events_require_recovery_predecessor_and_identical_controller(self):
+        plugin = "miui-activity-retention"
+        previous_commit = "e17de5d108d87b4a84289988c430a1d8f523b416"
+        previous = pack.committed_file(previous_commit, pack.package_path(plugin))
+        data, _ = pack.package(plugin)
+        with zipfile.ZipFile(io.BytesIO(previous)) as old, zipfile.ZipFile(io.BytesIO(data)) as new:
+            self.assertEqual(set(old.namelist()), set(new.namelist()))
+            members = {name: new.read(name) for name in new.namelist()}
+            for name in members.keys() - {"plugin.json"}:
+                self.assertEqual(old.read(name), members[name], name)
+            original = json.loads(old.read("plugin.json"))
+        self.assertEqual(pack.sha256(previous), "e19493882831da15dbb03bb9219bb41c07c1a9202d5ea23ffcdc1b2f3255f10e")
+        manifest = json.loads(members["plugin.json"])
+        self.assertIs(manifest["triggers"].pop("packageChanges"), True)
+        self.assertEqual(original, manifest)
+        for unsupported in (False, 1, "true", None):
+            manifest["triggers"]["packageChanges"] = unsupported
+            with self.subTest(value=unsupported), self.assertRaisesRegex(ValueError, "refresh triggers"):
+                pack.validate_manifest(plugin, dict(members, **{"plugin.json": pack.encoded(manifest)}))
+
     def test_frozen_artifact_matches_its_recorded_source_and_archive_identity(self):
         record = json.loads(pack.committed_file(FROZEN_ARTIFACT_COMMIT, Path("miui-candidate-build.json")))
         source = record["integration_source_commit"]

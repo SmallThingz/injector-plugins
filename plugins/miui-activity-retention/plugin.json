@@ -28,6 +28,7 @@
   },
   "triggers": {
     "boot": true,
-    "intervalMinutes": 15
+    "intervalMinutes": 15,
+    "packageChanges": true
   }
 }
