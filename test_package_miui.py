@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
-"""Current MIUI candidate packaging checks; no hooks or device calls."""
+"""Qualify current MIUI sources and the separate frozen artifact; never rewrite either."""
 import importlib.util
 import io
+import json
+import os
 from pathlib import Path
 import unittest
 import zipfile
 ROOT = Path(__file__).resolve().parent
+FROZEN_ARTIFACT_COMMIT = "72ff6bd0a57b8b0cccee7feb0e63a431d4a0cdba"
 spec = importlib.util.spec_from_file_location("package_catalog", ROOT / "package-catalog.py")
 pack = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pack)
 
 
 class CurrentMiuiPackagingTests(unittest.TestCase):
-    def test_current_predecessor_payload_and_repeatable_archive(self):
+    def test_current_source_candidate_predecessor_payload_and_repeatable_archive(self):
         plugin = "miui-activity-retention"
         members = {name: (ROOT / "plugins" / plugin / name).read_bytes()
                    for name in pack.PACKAGE_FILES[plugin]}
         manifest = pack.validate_manifest(plugin, members)
         self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["ui"]["layout"], "accordion")
+        self.assertTrue(manifest["ui"]["presentation"]["description"].strip())
         self.assertEqual(manifest["liveUpdate"]["fromSha256"],
                          "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337")
         data, _ = pack.package(plugin)
@@ -31,6 +36,41 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
             pack.validate_manifest(plugin, dict(members, **{"plugin.json": pack.encoded(manifest)}))
         with self.assertRaises(ValueError):
             pack.validate_manifest(plugin, dict(members, **{"activity-lists.jar": b"wrong payload"}))
+
+    def test_frozen_artifact_matches_its_recorded_source_and_archive_identity(self):
+        record = json.loads(pack.committed_file(FROZEN_ARTIFACT_COMMIT, Path("miui-candidate-build.json")))
+        source = record["integration_source_commit"]
+        for path, digest in record["source_files"].items():
+            self.assertEqual(digest, pack.sha256(pack.committed_file(source, Path(path))), path)
+        frozen = pack.committed_file(FROZEN_ARTIFACT_COMMIT, Path("packages/miui-activity-retention.zip"))
+        self.assertEqual(record["zip_sha256"], pack.sha256(frozen))
+        self.assertEqual(record["zip_bytes"], len(frozen))
+        with zipfile.ZipFile(io.BytesIO(frozen)) as archive:
+            self.assertEqual(pack.committed_file(source, Path(record["manifest_path"])), archive.read("plugin.json"))
+            self.assertEqual(record["jar_sha256"], pack.sha256(archive.read("activity-lists.jar")))
+            current_manifest = (ROOT / record["manifest_path"]).read_bytes()
+            if current_manifest != archive.read("plugin.json"):
+                self.assertNotEqual(frozen, pack.package("miui-activity-retention")[0])
+
+    @unittest.skipUnless(os.environ.get("MIUI_CURRENT_CANDIDATE"), "Set MIUI_CURRENT_CANDIDATE to verify an explicit candidate and its artifact.json")
+    def test_explicit_current_candidate_matches_sources_and_its_own_receipt(self):
+        candidate = Path(os.environ["MIUI_CURRENT_CANDIDATE"])
+        data = candidate.read_bytes()
+        record = json.loads(candidate.with_name("artifact.json").read_bytes())
+        self.assertEqual(pack.package("miui-activity-retention")[0], data)
+        self.assertEqual(pack.sha256(data), record["sha256"])
+        self.assertEqual(len(data), record["bytes"])
+        frozen = pack.committed_file(FROZEN_ARTIFACT_COMMIT, Path("packages/miui-activity-retention.zip"))
+        with zipfile.ZipFile(io.BytesIO(data)) as archive, zipfile.ZipFile(io.BytesIO(frozen)) as old:
+            for name in pack.PACKAGE_FILES["miui-activity-retention"]:
+                self.assertEqual(pack.committed_file(record["commit"], Path("plugins/miui-activity-retention") / name), archive.read(name))
+                if name != "plugin.json":
+                    self.assertEqual(old.read(name), archive.read(name))
+            manifest = json.loads(archive.read("plugin.json"))
+        self.assertEqual("0.1.0", manifest["version"])
+        self.assertEqual(manifest["version"], record["version"])
+        self.assertEqual(manifest["ui"]["layout"], record["layout"])
+        self.assertIs(record["controller_payload_unchanged"], True)
 
 
 if __name__ == "__main__":
