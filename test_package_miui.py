@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import zipfile
 ROOT = Path(__file__).resolve().parent
 FROZEN_ARTIFACT_COMMIT = "72ff6bd0a57b8b0cccee7feb0e63a431d4a0cdba"
@@ -57,6 +58,9 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         candidate = Path(os.environ["MIUI_CURRENT_CANDIDATE"])
         data = candidate.read_bytes()
         record = json.loads(candidate.with_name("artifact.json").read_bytes())
+        self.assert_current_candidate(data, record)
+
+    def assert_current_candidate(self, data, record):
         self.assertEqual(pack.package("miui-activity-retention")[0], data)
         self.assertEqual(pack.sha256(data), record["sha256"])
         self.assertEqual(len(data), record["bytes"])
@@ -64,13 +68,47 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(data)) as archive, zipfile.ZipFile(io.BytesIO(frozen)) as old:
             for name in pack.PACKAGE_FILES["miui-activity-retention"]:
                 self.assertEqual(pack.committed_file(record["commit"], Path("plugins/miui-activity-retention") / name), archive.read(name))
-                if name != "plugin.json":
-                    self.assertEqual(old.read(name), archive.read(name))
+            controller_unchanged = archive.read("activity-lists.jar") == old.read("activity-lists.jar")
             manifest = json.loads(archive.read("plugin.json"))
         self.assertEqual("0.1.0", manifest["version"])
         self.assertEqual(manifest["version"], record["version"])
         self.assertEqual(manifest["ui"]["layout"], record["layout"])
-        self.assertIs(record["controller_payload_unchanged"], True)
+        self.assertIs(record["controller_payload_unchanged"], controller_unchanged)
+
+    def test_current_candidate_controller_claim_matches_payload_and_commit(self):
+        frozen = pack.committed_file(FROZEN_ARTIFACT_COMMIT, Path("packages/miui-activity-retention.zip"))
+        with zipfile.ZipFile(io.BytesIO(frozen)) as old:
+            frozen_jar = old.read("activity-lists.jar")
+        for changed in (False, True):
+            with self.subTest(controller_changed=changed):
+                members = {name: (ROOT / "plugins/miui-activity-retention" / name).read_bytes()
+                           for name in pack.PACKAGE_FILES["miui-activity-retention"]}
+                members["activity-lists.jar"] = frozen_jar + (b"rebuilt test fixture" if changed else b"")
+                members["payload.sha256"] = (pack.sha256(members["activity-lists.jar"]) + "  activity-lists.jar\n").encode()
+                stream = io.BytesIO()
+                with zipfile.ZipFile(stream, "w") as archive:
+                    for name, content in members.items():
+                        archive.writestr(name, content)
+                data = stream.getvalue()
+                manifest = json.loads(members["plugin.json"])
+                record = {"commit": "a" * 40, "sha256": pack.sha256(data), "bytes": len(data),
+                          "version": manifest["version"], "layout": manifest["ui"]["layout"],
+                          "controller_payload_unchanged": not changed}
+                committed = dict(members)
+                def committed_file(commit, path):
+                    if commit == FROZEN_ARTIFACT_COMMIT:
+                        return frozen
+                    self.assertEqual(record["commit"], commit)
+                    self.assertEqual(Path("plugins/miui-activity-retention"), path.parent)
+                    return committed[path.name]
+                with patch.object(pack, "package", return_value=(data, None)), \
+                        patch.object(pack, "committed_file", side_effect=committed_file):
+                    self.assert_current_candidate(data, record)
+                    with self.assertRaises(AssertionError):
+                        self.assert_current_candidate(data, dict(record, controller_payload_unchanged=changed))
+                    committed["activity-lists.jar"] += b"uncommitted payload"
+                    with self.assertRaises(AssertionError):
+                        self.assert_current_candidate(data, record)
 
 
 if __name__ == "__main__":
