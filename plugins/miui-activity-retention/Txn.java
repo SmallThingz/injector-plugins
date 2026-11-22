@@ -27,6 +27,7 @@ public final class Txn {
     private static final String UPDATE = "txn-update.journal";
     private static final int TXN1 = 0x54584e31;
     private static final int TXN2 = 0x54584e32;
+    private static final int TXN3 = 0x54584e33;
     private static final int UPDATE1 = 0x54585531;
     private static final int MAX_JOURNAL_BYTES = 16 * 1024 * 1024;
     private static final Pattern CLASS_NAME = Pattern.compile(
@@ -42,9 +43,15 @@ public final class Txn {
         final boolean pending;
         final boolean enabled;
         final boolean reconciling;
+        final PendingWrite write;
 
         Active(String boot, String updateId, List<List<String>> image, List<List<String>> owned,
                boolean pending, boolean enabled, boolean reconciling) {
+            this(boot, updateId, image, owned, pending, enabled, reconciling, null);
+        }
+
+        Active(String boot, String updateId, List<List<String>> image, List<List<String>> owned,
+               boolean pending, boolean enabled, boolean reconciling, PendingWrite write) {
             this.boot = boot;
             this.updateId = updateId;
             this.image = image;
@@ -52,6 +59,21 @@ public final class Txn {
             this.pending = pending;
             this.enabled = enabled;
             this.reconciling = reconciling;
+            this.write = write;
+        }
+    }
+
+    private static final class PendingWrite {
+        final boolean enable;
+        final int field;
+        final List<String> image;
+        final List<String> owned;
+
+        PendingWrite(boolean enable, int field, List<String> image, List<String> owned) {
+            this.enable = enable;
+            this.field = field;
+            this.image = image;
+            this.owned = owned;
         }
     }
 
@@ -205,7 +227,8 @@ public final class Txn {
         Active active = readActive(bytes);
         Update update = readUpdate(updateBytes);
         if (!boot.equals(active.boot) || !boot.equals(update.boot) || update.previous
-                || !active.updateId.equals(update.id) || !active.pending || !active.reconciling)
+                || !active.updateId.equals(update.id) || !active.pending || !active.reconciling
+                || active.write != null)
             throw new IOException("Pending checkpoint does not match the current migration and boot");
         if (requireMatch) requirePartialRestore(active);
 
@@ -282,13 +305,13 @@ public final class Txn {
         Active state = null;
         if (!Files.notExists(journal)) {
             byte[] bytes = readBytes(journal);
-            if (magic(bytes) != TXN2) throw new IOException("Legacy installation requires explicit configure");
+            if (magic(bytes) == TXN1) throw new IOException("Legacy installation requires explicit configure");
             state = readActive(bytes);
         }
         Update migration = requireCommittedUpdate(dir, state);
         if (state == null && !enable) return;
         boolean sameBoot = state != null && boot.equals(state.boot);
-        if (sameBoot && state.pending) {
+        if (sameBoot && state.pending && state.write == null) {
             if (enable || migration == null || !boot.equals(migration.boot)
                     || !Files.isRegularFile(journal, LinkOption.NOFOLLOW_LINKS)
                     || !Files.isRegularFile(dir.resolve(UPDATE), LinkOption.NOFOLLOW_LINKS)) {
@@ -307,6 +330,10 @@ public final class Txn {
 
         List<List<String>> current = stableSnapshot(io);
         if (!sameBoot) state = new Active(boot, updateId, current, emptyPair(), false, wasEnabled, false);
+        if (state.write != null) {
+            state = reconcileWrite(journal, state, current, desired, enable, io);
+            current = stableSnapshot(io);
+        }
         Active target = plan(state, current, desired, enable);
         preflight(io, current, target.image);
         Files.createDirectories(dir);
@@ -323,24 +350,11 @@ public final class Txn {
                 owned.set(i, target.owned.get(i));
                 continue;
             }
-            requireCurrent(io, current);
-            saveActive(journal, new Active(boot, updateId, current, owned, true, wasEnabled, true));
-            List<List<String>> after = replace(current, i, target.image.get(i));
-            try {
-                dispatch(io, i, after);
-            } catch (WriteRejectedException rejected) {
-                try {
-                    saveActive(journal, new Active(boot, updateId, current, owned, false, wasEnabled, true));
-                } catch (IOException checkpointFailure) {
-                    rejected.addSuppressed(checkpointFailure);
-                }
-                throw rejected;
-            }
-            verifyWrite(io, i, current, after);
-            current = after;
+            Active before = new Active(boot, updateId, current, new ArrayList<>(owned), false, wasEnabled, true);
+            PendingWrite write = new PendingWrite(enable, i, target.image.get(i), target.owned.get(i));
+            saved = writeField(journal, before, write, current, before, io);
+            current = saved.image;
             owned.set(i, target.owned.get(i));
-            saved = new Active(boot, updateId, current, new ArrayList<>(owned), false, wasEnabled, true);
-            saveActive(journal, saved);
         }
         requireCurrent(io, target.image);
         if (!sameBoot || saved.reconciling || saved.enabled != enable || !saved.image.equals(target.image)
@@ -365,14 +379,68 @@ public final class Txn {
             preflight(io, current, target.image);
             List<String> retained = new ArrayList<>(state.owned.get(0));
             retained.retainAll(new HashSet<>(current.get(0)));
-            saveActive(journal, new Active(state.boot, state.updateId, current,
-                    Arrays.asList(retained, Collections.emptyList()), true, true, true));
-            requireCurrent(io, current);
-            dispatch(io, 0, target.image);
-            verifyWrite(io, 0, current, target.image);
+            Active before = new Active(state.boot, state.updateId, current,
+                    Arrays.asList(retained, Collections.emptyList()), false, true, true);
+            PendingWrite write = new PendingWrite(false, 0, target.image.get(0), target.owned.get(0));
+            writeField(journal, before, write, current, state, io);
         }
         requireCurrent(io, target.image);
         saveActive(journal, target);
+    }
+
+    private static Active reconcileWrite(Path journal, Active state, List<List<String>> current,
+                                         Set<String> desired, boolean enable, IO io) throws Exception {
+        PendingWrite write = state.write;
+        List<String> observed = current.get(write.field);
+        if (observed.equals(write.image)) {
+            Active checkpoint = confirmedWrite(state, write);
+            saveActive(journal, checkpoint);
+            return checkpoint;
+        }
+        if (!observed.equals(state.image.get(write.field))) {
+            throw new IOException("Pending write differs from both saved images for " + FIELDS[write.field]);
+        }
+        if (write.enable != enable) {
+            throw new IOException("Pending preimage requires a fresh " + (write.enable ? "Enable" : "Disable"));
+        }
+        Active target = plan(state, current, desired, enable);
+        if (!write.image.equals(target.image.get(write.field)) || !write.owned.equals(target.owned.get(write.field))) {
+            throw new IOException("Pending preimage requires the same target for " + FIELDS[write.field]);
+        }
+        preflight(io, current, replace(current, write.field, write.image));
+        return writeField(journal, state, write, current, state, io);
+    }
+
+    private static Active writeField(Path journal, Active before, PendingWrite write,
+                                     List<List<String>> current, Active rejectedState, IO io) throws Exception {
+        requireCurrent(io, current);
+        saveActive(journal, new Active(before.boot, before.updateId, before.image, before.owned,
+                true, before.enabled, true, write));
+        List<List<String>> after = replace(current, write.field, write.image);
+        boolean attempted = false;
+        try {
+            requireCurrent(io, current);
+            attempted = true;
+            dispatch(io, write.field, after);
+        } catch (Exception failure) {
+            if (!attempted || failure instanceof WriteRejectedException) {
+                try {
+                    saveActive(journal, rejectedState);
+                } catch (IOException checkpointFailure) {
+                    failure.addSuppressed(checkpointFailure);
+                }
+            }
+            throw failure;
+        }
+        verifyWrite(io, write.field, current, after);
+        Active checkpoint = confirmedWrite(before, write);
+        saveActive(journal, checkpoint);
+        return checkpoint;
+    }
+
+    private static Active confirmedWrite(Active before, PendingWrite write) {
+        return new Active(before.boot, before.updateId, replace(before.image, write.field, write.image),
+                replace(before.owned, write.field, write.owned), false, before.enabled, true);
     }
 
     private static Update requireCommittedUpdate(Path dir, Active active) throws IOException {
@@ -537,7 +605,8 @@ public final class Txn {
 
     private static Active readActive(byte[] bytes) throws IOException {
         try (DataInputStream in = stream(bytes)) {
-            if (in.readInt() != TXN2) throw new IOException("Unknown transaction journal");
+            int version = in.readInt();
+            if (version != TXN2 && version != TXN3) throw new IOException("Unknown transaction journal");
             String boot = in.readUTF();
             String id = in.readUTF();
             identity(boot, false);
@@ -547,25 +616,49 @@ public final class Txn {
             int pending = in.readUnsignedByte();
             int enabled = in.readUnsignedByte();
             int reconciling = in.readUnsignedByte();
-            end(in);
             if (pending > 1 || enabled > 1 || reconciling > 1 || (pending == 1 && reconciling == 0)) {
                 throw new IOException("Invalid transaction state");
             }
             for (int i = 0; i < FIELDS.length; i++) {
-                if (classes(owned.get(i)).size() != owned.get(i).size()) {
-                    throw new IOException("Invalid ownership");
-                }
-                Set<String> seen = new HashSet<>();
-                Set<String> keys = new HashSet<>(owned.get(i));
-                for (String name : image.get(i)) {
-                    if (keys.contains(name) && !seen.add(name)) throw new IOException("Duplicate ownership");
-                }
-                if (!seen.equals(keys)) throw new IOException("Ownership missing from journal image");
+                checkOwnership(image.get(i), owned.get(i));
             }
-            return new Active(boot, id, image, owned, pending == 1, enabled == 1, reconciling == 1);
+            PendingWrite write = null;
+            if (version == TXN3) {
+                int operation = in.readUnsignedByte();
+                int field = in.readUnsignedByte();
+                if (pending != 1 || operation > 1 || field >= FIELDS.length) {
+                    throw new IOException("Invalid pending write identity");
+                }
+                List<String> after = readList(in);
+                List<String> afterOwned = readList(in);
+                checkOwnership(after, afterOwned);
+                if (after.equals(image.get(field)) || (operation == 0 && !afterOwned.isEmpty())
+                        || !unowned(after, afterOwned).equals(unowned(image.get(field), owned.get(field)))) {
+                    throw new IOException("Invalid pending afterimage");
+                }
+                write = new PendingWrite(operation == 1, field, after, afterOwned);
+            }
+            end(in);
+            return new Active(boot, id, image, owned, pending == 1, enabled == 1, reconciling == 1, write);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid transaction journal", e);
         }
+    }
+
+    private static void checkOwnership(List<String> image, List<String> owned) throws IOException {
+        if (classes(owned).size() != owned.size()) throw new IOException("Invalid ownership");
+        Set<String> seen = new HashSet<>();
+        Set<String> keys = new HashSet<>(owned);
+        for (String name : image) {
+            if (keys.contains(name) && !seen.add(name)) throw new IOException("Duplicate ownership");
+        }
+        if (!seen.equals(keys)) throw new IOException("Ownership missing from journal image");
+    }
+
+    private static List<String> unowned(List<String> image, List<String> owned) {
+        List<String> result = new ArrayList<>(image);
+        result.removeAll(new HashSet<>(owned));
+        return result;
     }
 
     private static Update readUpdate(byte[] bytes) throws IOException {
@@ -605,7 +698,7 @@ public final class Txn {
 
     private static void saveActive(Path path, Active active) throws IOException {
         save(path, out -> {
-            out.writeInt(TXN2);
+            out.writeInt(active.write == null ? TXN2 : TXN3);
             out.writeUTF(active.boot);
             out.writeUTF(active.updateId);
             writePair(out, active.image);
@@ -613,6 +706,12 @@ public final class Txn {
             out.writeBoolean(active.pending);
             out.writeBoolean(active.enabled);
             out.writeBoolean(active.reconciling);
+            if (active.write != null) {
+                out.writeBoolean(active.write.enable);
+                out.writeByte(active.write.field);
+                writeList(out, active.write.image);
+                writeList(out, active.write.owned);
+            }
         });
     }
 
@@ -670,12 +769,14 @@ public final class Txn {
     }
 
     private static void writePair(DataOutputStream out, List<List<String>> pair) throws IOException {
-        for (List<String> list : pair) {
-            out.writeInt(list.size());
-            for (String value : list) {
-                out.writeInt(value == null ? -1 : value.length());
-                if (value != null) out.writeChars(value);
-            }
+        for (List<String> list : pair) writeList(out, list);
+    }
+
+    private static void writeList(DataOutputStream out, List<String> list) throws IOException {
+        out.writeInt(list.size());
+        for (String value : list) {
+            out.writeInt(value == null ? -1 : value.length());
+            if (value != null) out.writeChars(value);
         }
     }
 

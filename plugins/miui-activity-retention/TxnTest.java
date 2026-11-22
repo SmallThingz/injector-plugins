@@ -17,6 +17,7 @@ public final class TxnTest {
     private static final List<String> DECLARED = Arrays.asList("new.Z", "new.A", SHARED, "new.A");
 
     private interface Action { void run() throws Exception; }
+    private static final class WorkerDied extends Error {}
 
     private static final class Host implements Txn.IO {
         final Path dir;
@@ -30,6 +31,7 @@ public final class TxnTest {
         int rejectOn;
         int unknownBeforeOn;
         int loseReplyOn;
+        int killAfterWriteOn;
         int driftOn;
         int failReadBeforeSecond;
         int hideReadsAfterFirst;
@@ -75,6 +77,7 @@ public final class TxnTest {
             writes++;
             if (writes == driftOn) values.put(SHOW, new ArrayList<>(foreignShow));
             postWrites.add(pair());
+            if (writes == killAfterWriteOn) throw new WorkerDied();
             if (writes == loseReplyOn) throw new IOException("Lost setter reply");
         }
 
@@ -109,6 +112,26 @@ public final class TxnTest {
 
         void configure() throws Exception {
             Txn.configure(dir, BOOT, ID, DECLARED, this);
+        }
+
+        void oldPendingDisable() throws Exception {
+            legacy(BOOT, 3, 0, true);
+            configure();
+            values.put(SHOW, new ArrayList<>(BASE_SHOW));
+            List<String> ownedHide = new ArrayList<>(values.get(HIDE));
+            ownedHide.removeAll(BASE_HIDE);
+            try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(dir.resolve(JOURNAL)))) {
+                out.writeInt(0x54584e32);
+                out.writeUTF(BOOT);
+                out.writeUTF(ID);
+                legacyList(out, values.get(HIDE));
+                legacyList(out, values.get(SHOW));
+                legacyList(out, ownedHide);
+                legacyList(out, Collections.emptyList());
+                out.writeBoolean(true);
+                out.writeBoolean(true);
+                out.writeBoolean(true);
+            }
         }
 
         String inspect(String boot, String id) throws Exception {
@@ -429,10 +452,11 @@ public final class TxnTest {
         ambiguous.loseReplyOn = 3;
         refused(() -> ambiguous.enable(BOOT, Collections.singletonList("new.B")));
         refused(() -> Txn.requireEnabled(ambiguous.dir));
-        refused(() -> ambiguous.disable(BOOT));
-        expect(3, ambiguous.writes);
+        ambiguous.disable(BOOT);
+        expect(5, ambiguous.writes);
+        expect(Arrays.asList(BASE_HIDE, BASE_SHOW), ambiguous.pair());
         ambiguous.disable(NEXT_BOOT);
-        expect(3, ambiguous.writes);
+        expect(5, ambiguous.writes);
         refused(() -> Txn.requireEnabled(ambiguous.dir));
     }
 
@@ -484,11 +508,9 @@ public final class TxnTest {
 
     private static void inspectPartialRestore(Path root) throws Exception {
         Host h = new Host(root, "partial-restore-proof");
-        h.legacy(BOOT, 3, 0, true);
-        h.configure();
+        h.oldPendingDisable();
         List<List<String>> enabled = h.pair();
-        h.loseReplyOn = h.writes + 2;
-        refused(() -> h.disable(BOOT));
+        h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
         expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
 
         Path journal = h.dir.resolve(JOURNAL);
@@ -532,10 +554,7 @@ public final class TxnTest {
 
     private static void reconcileOwnedEntries(Path root, boolean loseReply) throws Exception {
         Host h = new Host(root, loseReply ? "partial-restore-lost" : "partial-restore-owned");
-        h.legacy(BOOT, 3, 0, true);
-        h.configure();
-        h.unknownBeforeOn = h.attempts + 2;
-        refused(() -> h.disable(BOOT));
+        h.oldPendingDisable();
         Path journal = h.dir.resolve(JOURNAL);
         Path marker = h.dir.resolve(UPDATE);
         byte[] pending = Files.readAllBytes(journal);
@@ -581,6 +600,68 @@ public final class TxnTest {
         expect(target, h.pair());
     }
 
+    private static void interruptedOrdinaryWrites(Path root) throws Exception {
+        for (boolean enable : Arrays.asList(false, true)) {
+            for (int boundary = 1; boundary <= 2; boundary++) {
+                Host h = new Host(root, "ordinary-kill-" + enable + "-" + boundary);
+                if (!enable) h.enable(BOOT, DECLARED);
+                Action request = enable ? () -> h.enable(BOOT, DECLARED) : () -> h.disable(BOOT);
+                int initialWrites = h.writes;
+                h.killAfterWriteOn = initialWrites + boundary;
+                try {
+                    request.run();
+                    throw new AssertionError("Expected simulated worker death");
+                } catch (WorkerDied expected) {
+                    expect(initialWrites + boundary, h.writes);
+                }
+                Path journal = h.dir.resolve(JOURNAL);
+                byte[] pending = Files.readAllBytes(journal);
+                expect(0x54584e33, new DataInputStream(new ByteArrayInputStream(pending)).readInt());
+                refused(() -> Txn.inspectState(h.dir, BOOT, h));
+                refused(() -> Txn.requireEnabled(h.dir));
+                sameBytes(pending, Files.readAllBytes(journal));
+                if (boundary == 1) {
+                    h.failPreflight = enable ? SHOW : HIDE;
+                    refused(request);
+                    expect(initialWrites + 1, h.writes);
+                    byte[] checkpoint = Files.readAllBytes(journal);
+                    expect(0x54584e32, new DataInputStream(new ByteArrayInputStream(checkpoint)).readInt());
+                    h.failPreflight = null;
+                }
+                request.run();
+                expect(initialWrites + 2, h.writes);
+                expectReadOnlyProof(h, enable ? "ACTIVE" : "INACTIVE");
+                h.disable(BOOT);
+                expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
+                h.enable(BOOT, DECLARED);
+                h.disable(BOOT);
+                expectReadOnlyProof(h, "INACTIVE");
+                expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
+            }
+        }
+    }
+
+    private static void retryPendingPreimage(Path root) throws Exception {
+        Host h = new Host(root, "ordinary-preimage");
+        h.unknownBeforeOn = 1;
+        refused(() -> h.enable(BOOT, DECLARED));
+        Path journal = h.dir.resolve(JOURNAL);
+        byte[] pending = Files.readAllBytes(journal);
+        refused(() -> h.disable(BOOT));
+        refused(() -> h.enable(BOOT, Collections.singletonList("new.Changed")));
+        h.values.get(HIDE).add("foreign.Drift");
+        refused(() -> h.enable(BOOT, DECLARED));
+        expect(1, h.attempts);
+        sameBytes(pending, Files.readAllBytes(journal));
+        h.values.get(HIDE).remove(h.values.get(HIDE).size() - 1);
+        h.values.get(SHOW).add("foreign.Show");
+        h.enable(BOOT, DECLARED);
+        expect(2, h.writes);
+        h.disable(BOOT);
+        expect(appendMissing(BASE_SHOW, Collections.singletonList("foreign.Show")), h.values.get(SHOW));
+        expectReadOnlyProof(h, "INACTIVE");
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length != 1) throw new IllegalArgumentException("TxnTest requires an empty scratch directory");
         Path root = Paths.get(args[0]);
@@ -593,6 +674,8 @@ public final class TxnTest {
         inspectPartialRestore(root);
         reconcileOwnedEntries(root, false);
         reconcileOwnedEntries(root, true);
+        interruptedOrdinaryWrites(root);
+        retryPendingPreimage(root);
         System.out.println("TxnTest passed");
     }
 }
