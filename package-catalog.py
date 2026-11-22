@@ -134,7 +134,7 @@ def validate_manifest(plugin, members):
             raise ValueError("MIUI retention requires root/shell enable and disable hooks")
         if universal:
             if manifest.get("liveUpdate") != {
-                    "fromSha256": "3a47b11bced6a87552b108d7a030dd0f2a365fe93ea40c815422ce40011fc245",
+                    "fromSha256": "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337",
                     "inspect": "hook.sh"}:
                 raise ValueError("Unexpected MIUI update source or inspection hook")
             if manifest.get("triggers") != {"boot": True, "intervalMinutes": 15} or "session" in manifest:

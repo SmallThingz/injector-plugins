@@ -1,0 +1,44 @@
+{
+  "format": 1,
+  "publication": false,
+  "miui_source_commit": "c1397ecc41300dc5e575b3d44cad4e1b5eb67fc7",
+  "integration_source_commit": "9823c118948ac0df70a212129c88e1e5d48ed3e1",
+  "source_files": {
+    "plugins/miui-activity-retention/ActivityLists.java": "c1d26d2d417634d8ad1315a0776f8056fa047df9bc9abc5562055e13105124f3",
+    "plugins/miui-activity-retention/Inventory.java": "2979fb8a1af9bf2e0084509c5a86d478b0f5c25a73721a07201ef8a9b281229d",
+    "plugins/miui-activity-retention/PackageChanges.java": "de44e693c5864e0bac35b95452b2149bdeaff57c0409d6bdfd2468ec2cdad755",
+    "plugins/miui-activity-retention/ParcelCapacity.java": "cbb2420649d99d712550bcba53afab1dae71af061178388cbe976247649dc4f5",
+    "plugins/miui-activity-retention/Txn.java": "8372909cea9946658d06607a707ae0ee390057a8add34ca6a0b62b03c3678c43",
+    "plugins/miui-activity-retention/TxnTest.java": "43092db4ade637b973674aadd4df5f6e0ad0888607863ce8d8f41cd8b484a068",
+    "plugins/miui-activity-retention/plugin.json": "f66685a9fec64222e4dd14f50ede55a94e9c3082c74f35778e562f2ea95dc272",
+    "plugins/miui-activity-retention/hook.sh": "eeaab748502b58b7945a5c548c6811cc75ce9dda15a8e8a71f4c79cc06382f2a",
+    "plugins/miui-activity-retention/build.sh": "ccc426e6a71103f34cc09d3c7cbb017a8db93950d0a02622f4f059299c418003",
+    "plugins/miui-activity-retention/verify.sh": "13c404b271e1c89952d78d01c7e09671eed96f9fbb1a2db7a041d5e49272754a"
+  },
+  "toolchain": {
+    "javac": "javac 27.0.1.0.3",
+    "android_platform": 36,
+    "build_tools": "36.0.0",
+    "min_api": 29
+  },
+  "jar_sha256": "9f3f4c665c87f2cd6ef84a3130d50b18950b945d08ec033a1f500a6c1c3cce22",
+  "dex_sha256": "92c02ed1372b834cb72f299103fc2b938224abcb643c8a01eb8056949032fc0d",
+  "zip_sha256": "6d0f981b8f2bba972145662a35d8e4ffa5ce3ca3c363ffee0543baab85c31e31",
+  "zip_bytes": 24305,
+  "manifest_path": "plugins/miui-activity-retention/plugin.json",
+  "predecessor_zip_sha256": "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337",
+  "proposed_tag": "plugins-20261123-miui-010-1",
+  "qualification": {
+    "jvm": [
+      "InventoryTest passed",
+      "ParcelCapacityTest passed",
+      "PackageChangesTest passed",
+      "TxnTest passed"
+    ],
+    "miui_package_tests": 1,
+    "native_package_tests": 6,
+    "d8": "Succeeded; initial build.sh later failed at obsolete packager predecessor pin; JAR retained, pin corrected, packaging-only check passed. No compiler rerun.",
+    "device": "Not installed or tested by this lane; requires parent qualification.",
+    "catalog_suite": "25 inherited legacy fixture errors: missing old cpu-control-native. This candidate uses separate qualified native packaging plus the focused MIUI packager check; the legacy combined catalog builder is not qualified for these four packages."
+  }
+}
