@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "b8afa1e5d76de919d20b14d1a30e90712796df2f",
+  "tag": "plugins-20261122-controls-1",
+  "assets": {
+    "cpu-control.zip": "097edc066796e74dce2a16d0d886af84ab88d38224e050ea9f9057fde680f16f",
+    "caffeine.zip": "2e0dba16c93e31297a6af8ed0c9ce594be3f6b6fd281322f9da03125464f2aac"
+  }
+}
