@@ -34,10 +34,10 @@
       "icon": "plugin",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "6b0bc39b8e57699b4876f35e49b391e425c2bd50",
-        "tag": "plugins-20261122-caffeine-presets-1",
+        "commit": "636c778d5148399c0a976fe9729d1724e7707490",
+        "tag": "plugins-20261122-caffeine-screen-off-1",
         "asset": "caffeine.zip",
-        "sha256": "8f31fda019aa7c368c7ba57374518057cb5385584635752661f167be430d3676",
+        "sha256": "867e510a09e9074c798ff8c89424f1bd7139c2f7d80c8eae58c96292d6753bce",
         "manifestPath": "plugins/caffeine/plugin.json"
       }
     }
