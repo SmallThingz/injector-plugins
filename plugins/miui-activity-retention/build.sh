@@ -31,13 +31,13 @@ jar.replace("activity-lists.jar")
 Path("payload.sha256").write_text(f"{digest}  activity-lists.jar\n", encoding="ascii")
 PY
 python3 - <<'PYREVIEW'
-import importlib.util
+from importlib import import_module
 from pathlib import Path
+import sys
 
 root = Path("../..").resolve()
-spec = importlib.util.spec_from_file_location("catalog", root / "package-catalog.py")
-catalog = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(catalog)
+sys.path.insert(0, str(root))
+catalog = import_module("package-catalog")
 plugin = "miui-activity-retention"
 data, _ = catalog.package(plugin)
 archive = root / ".tmp" / "miui-universal-review" / f"{plugin}.zip"

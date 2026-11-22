@@ -24,6 +24,16 @@ public final class PackageChangesTest {
         check(reboot.observe((since, user) -> { check(since == 0); return 45; }));
         reboot.record();
         check(!reboot.observe((since, user) -> { check(since == 45); return null; }));
+        // A failed cache rename after the controller commits must leave verification successful.
+        Path cursor = dir.resolve("activity-package-sequence");
+        Files.delete(cursor);
+        Files.createDirectory(cursor);
+        reboot.record();
+        check(Files.isDirectory(cursor));
+        try (java.util.stream.Stream<Path> files = Files.list(dir)) {
+            check(files.count() == 1);
+        }
+        check(reboot.observe((since, user) -> { check(since == 0); return 46; }));
         System.out.println("Package change cursor, failed scan, user switch and reboot checks passed");
     }
 

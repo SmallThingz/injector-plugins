@@ -49,3 +49,29 @@ check rejected
 mv regular activity-retention.lock
 check open
 echo "Inspection lock admission checks passed"
+
+# Use the real host flock and inspect the descriptor from a separate worker process.
+rm "$work/bin/flock"
+cat > "$work/bin/worker" <<'WORKER'
+#!/usr/bin/env python3
+import fcntl
+import os
+from pathlib import Path
+
+lock = Path(os.environ["PLUGIN_STATE_DIR"]) / "activity-retention.lock"
+assert os.path.samestat(os.fstat(9), lock.stat())
+with lock.open("rb") as contender:
+    try:
+        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        raise AssertionError("worker did not hold the controller lock")
+WORKER
+chmod +x "$work/bin/worker"
+sed 's@/system/bin/app_process@worker@g' "$plugin/hook.sh" > "$work/check-worker.sh"
+for INJECTOR_EVENT in enable inspect-recovery; do
+    sh "$work/check-worker.sh"
+    flock -n activity-retention.lock true
+done
+echo "Worker inherited FD9 and released its lock on exit"

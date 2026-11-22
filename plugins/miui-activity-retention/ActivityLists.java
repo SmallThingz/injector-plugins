@@ -20,11 +20,13 @@ public final class ActivityLists implements Txn.IO {
         System.err.println("MIUI stage: " + message + " elapsed_ms=" + elapsedMs);
     }
 
+    private final boolean recoverTarget;
     private final Object service;
     private final Class<?> api;
     private int inventoryUser = -1;
 
-    private ActivityLists() throws Exception {
+    private ActivityLists(boolean recoverTarget) throws Exception {
+        this.recoverTarget = recoverTarget;
         service = Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null);
         api = Class.forName("android.app.IActivityManager");
     }
@@ -154,12 +156,25 @@ public final class ActivityLists implements Txn.IO {
             List<String> names = inventory.classes();
             Txn.configure(state, boot, updateId, names, this);
             count = names.size();
+        } else if (recoverTarget) {
+            count = Txn.enableFromRestoreTarget(state, boot, inventory, this);
         } else {
             count = Txn.runWithInventory(state, boot, "enable", inventory, this);
         }
         checkUser();
         changes.record();
         System.out.println("Verified both lists for " + count + " declared activity classes");
+    }
+
+    static boolean explicitTargetEnable(String event, String request, String generation, String pluginDir) {
+        if (request == null && generation == null) return false;
+        if (!"enable".equals(event) || request == null || generation == null || pluginDir == null
+                || !UUID.fromString(request).toString().equals(request)
+                || !UUID.fromString(generation).toString().equals(generation)
+                || !Paths.get(pluginDir).isAbsolute()
+                || !Paths.get(generation).equals(Paths.get(pluginDir).getFileName()))
+            throw new IllegalArgumentException("Invalid explicit Enable identity");
+        return true;
     }
 
     public static void main(String[] args) throws Exception {
@@ -172,7 +187,9 @@ public final class ActivityLists implements Txn.IO {
             stage("worker " + args[0] + " pid=" + android.os.Process.myPid()
                     + " boot_ms=" + android.os.SystemClock.elapsedRealtime());
         }
-        ActivityLists bridge = new ActivityLists();
+        boolean recoverTarget = explicitTargetEnable(args[0], System.getenv("INJECTOR_EXPLICIT_ENABLE_ID"),
+                System.getenv("INJECTOR_EXPLICIT_ENABLE_GENERATION"), System.getenv("INJECTOR_PLUGIN_DIR"));
+        ActivityLists bridge = new ActivityLists(recoverTarget);
         execute(args[0], Paths.get(args[1]), args[2], boot, bridge, bridge::applyInventory);
     }
 }

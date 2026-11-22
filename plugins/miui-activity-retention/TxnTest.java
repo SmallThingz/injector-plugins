@@ -597,6 +597,108 @@ public final class TxnTest {
         expectReadOnlyProof(fresh, "ACTIVE");
     }
 
+    private static void freshEnableFromTarget(Path root) throws Exception {
+        Host h = new Host(root, "verified-target-enable");
+        h.oldPendingDisable();
+        Path journal = h.dir.resolve(JOURNAL);
+        Path marker = h.dir.resolve(UPDATE);
+        byte[] pending = Files.readAllBytes(journal);
+        byte[] migration = Files.readAllBytes(marker);
+        int attempts = h.attempts;
+        Txn.InventorySource noScan = () -> { throw new AssertionError("Unadmitted inventory"); };
+        refused(() -> Txn.enableFromRestoreTarget(h.dir, NEXT_BOOT, noScan, h));
+        refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, noScan, h)); // CHECKPOINT
+        h.values.get(SHOW).add("foreign.Other");
+        refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, noScan, h)); // DIVERGED
+        h.values.put(SHOW, new ArrayList<>(BASE_SHOW));
+        h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
+        refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, () -> {
+            h.values.get(HIDE).add("foreign.DuringInventory");
+            return DECLARED;
+        }, h));
+        h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
+        for (Path changed : Arrays.asList(marker, journal)) {
+            byte[] original = Files.readAllBytes(changed);
+            refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, () -> {
+                Files.write(changed, new byte[]{42});
+                return DECLARED;
+            }, h));
+            sameBytes(new byte[]{42}, Files.readAllBytes(changed));
+            Files.write(changed, original);
+        }
+        h.failPreflight = SHOW;
+        refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h));
+        h.failPreflight = null;
+        expect(attempts, h.attempts);
+        sameBytes(pending, Files.readAllBytes(journal));
+        sameBytes(migration, Files.readAllBytes(marker));
+
+        int before = h.postWrites.size();
+        expect(DECLARED.size(), Txn.enableFromRestoreTarget(h.dir, BOOT, () -> {
+            sameBytes(pending, Files.readAllBytes(journal));
+            return DECLARED;
+        }, h));
+        List<String> desired = new ArrayList<>(new TreeSet<>(DECLARED));
+        List<String> hide = appendMissing(BASE_HIDE, desired);
+        List<String> show = appendMissing(BASE_SHOW, desired);
+        expect(Arrays.asList(Arrays.asList(hide, BASE_SHOW), Arrays.asList(hide, show)),
+                h.postWrites.subList(before, h.postWrites.size()));
+        expectReadOnlyProof(h, "ACTIVE");
+        byte[] active = Files.readAllBytes(journal);
+        expect(DECLARED.size(), Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h));
+        refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT,
+                () -> Collections.singletonList("changed.Activity"), h));
+        sameBytes(active, Files.readAllBytes(journal));
+        h.enable(BOOT, DECLARED);
+        expect(attempts + 2, h.attempts);
+        sameBytes(migration, Files.readAllBytes(marker));
+        // A later explicit stop in this host fixture checks ownership of stock entries.
+        h.disable(BOOT);
+        expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
+    }
+
+    private static void interruptedTargetEnable(Path root) throws Exception {
+        for (int step = 1; step <= 2; step++) {
+            Host h = new Host(root, "target-enable-interrupted-" + step);
+            h.oldPendingDisable();
+            h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
+            h.queueOn = h.attempts + step;
+            refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h));
+            Path journal = h.dir.resolve(JOURNAL);
+            byte[] pending = Files.readAllBytes(journal);
+            expect(0x54584e33, new DataInputStream(new ByteArrayInputStream(pending)).readInt());
+            int attempts = h.attempts;
+            refused(() -> Txn.requireEnabled(h.dir));
+            refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h));
+            refused(() -> h.enable(BOOT, DECLARED));
+            sameBytes(pending, Files.readAllBytes(journal));
+            expect(attempts, h.attempts);
+            h.values.put(h.queuedField, h.queuedValue);
+            Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h);
+            expect(attempts + 2 - step, h.attempts);
+            expectReadOnlyProof(h, "ACTIVE");
+        }
+    }
+
+    private static void stoppedTargetCheckpoint(Path root) throws Exception {
+        for (int step = 1; step <= 2; step++) {
+            Host h = new Host(root, "stopped-target-checkpoint-" + step);
+            h.oldPendingDisable();
+            h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
+            int writes = h.writes;
+            h.rejectOn = h.attempts + step;
+            refused(() -> Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h));
+            expect(writes + step - 1, h.writes);
+            byte[] checkpoint = Files.readAllBytes(h.dir.resolve(JOURNAL));
+            expect(0x54584e34, new DataInputStream(new ByteArrayInputStream(checkpoint)).readInt());
+            refused(() -> Txn.requireEnabled(h.dir));
+            sameBytes(checkpoint, Files.readAllBytes(h.dir.resolve(JOURNAL)));
+            Txn.enableFromRestoreTarget(h.dir, BOOT, () -> DECLARED, h);
+            expect(writes + 2, h.writes);
+            expectReadOnlyProof(h, "ACTIVE");
+        }
+    }
+
     private static void legacyQueuedRestore(Path root) throws Exception {
         Host h = new Host(root, "legacy-queued-restore");
         h.oldPendingDisable();
@@ -756,6 +858,9 @@ public final class TxnTest {
         inspectPartialRestore(root);
         legacyQueuedRestore(root);
         pendingEnableSkipsInventory(root);
+        freshEnableFromTarget(root);
+        interruptedTargetEnable(root);
+        stoppedTargetCheckpoint(root);
         interruptedOrdinaryWrites(root);
         queuedPendingPreimage(root);
         interruptedDisableAdmission(root);

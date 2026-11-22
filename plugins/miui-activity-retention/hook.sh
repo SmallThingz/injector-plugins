@@ -32,4 +32,4 @@ chmod 400 "$dex"
 case "$INJECTOR_EVENT" in
     enable|disable|configure|run|boot|interval) echo "MIUI stage: starting worker ($INJECTOR_EVENT)" >&2 ;;
 esac
-CLASSPATH="$dex" /system/bin/app_process /system/bin ActivityLists "$INJECTOR_EVENT" "$PLUGIN_STATE_DIR" "${INJECTOR_UPDATE_ID-}"
+CLASSPATH="$dex" /system/bin/app_process /system/bin ActivityLists "$INJECTOR_EVENT" "$PLUGIN_STATE_DIR" "${INJECTOR_UPDATE_ID-}" 9>&9

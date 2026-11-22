@@ -13,7 +13,32 @@ public final class BridgeDisableTest {
         });
     }
 
+    private static void enableIdentity() {
+        String request = "130fb554-a777-4fb2-bfa1-214d8a8d5f4f";
+        String generation = "48b84f00-5231-4198-bb73-4aa08a7c9311";
+        String dir = "/review/" + generation;
+        check(!ActivityLists.explicitTargetEnable("enable", null, null, dir));
+        check(ActivityLists.explicitTargetEnable("enable", request, generation, dir));
+        for (String event : Arrays.asList("interval", "boot", "run", "configure", "disable", "inspect-recovery"))
+            rejectIdentity(event, request, generation, dir);
+        rejectIdentity("enable", null, generation, dir);
+        rejectIdentity("enable", request, null, dir);
+        rejectIdentity("enable", request, generation, "/review/" + request);
+        rejectIdentity("enable", request, generation, generation);
+        rejectIdentity("enable", request, generation, "/");
+        rejectIdentity("enable", request.toUpperCase(java.util.Locale.ROOT), generation, dir);
+        rejectIdentity("enable", request, "invalid", dir);
+    }
+
+    private static void rejectIdentity(String event, String request, String generation, String dir) {
+        try {
+            ActivityLists.explicitTargetEnable(event, request, generation, dir);
+            throw new AssertionError("Invalid explicit Enable identity accepted");
+        } catch (IllegalArgumentException expected) {}
+    }
+
     public static void main(String[] args) throws Exception {
+        enableIdentity();
         TxnTest.Host host = new TxnTest.Host(Paths.get(args[0]), "explicit-restore");
         host.enable("boot", Collections.singletonList("app.Activity"));
         Path cursor = Files.write(host.dir.resolve("activity-package-sequence"), new byte[]{1});

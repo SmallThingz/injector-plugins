@@ -58,7 +58,16 @@ final class PackageChanges {
         return !hasCursor || changes != null;
     }
 
-    void record() throws IOException {
+    void record() {
+        try {
+            saveCursor();
+        } catch (IOException unavailableCursor) {
+            // The journal already records verified lists. Keeping an older cursor may trigger another scan.
+            System.err.println("MIUI package change cursor unavailable: " + unavailableCursor.getMessage());
+        }
+    }
+
+    private void saveCursor() throws IOException {
         Path tmp = Files.createTempFile(path.getParent(), ".activity-package-sequence-", ".tmp");
         try {
             Files.write(tmp, (boot + " " + user + " " + sequence + "\n").getBytes(StandardCharsets.US_ASCII));

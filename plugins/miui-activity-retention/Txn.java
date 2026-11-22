@@ -223,31 +223,92 @@ public final class Txn {
     }
 
     private static String observeRecovery(Path dir, String boot, IO io, boolean requireMatch) throws Exception {
-        identity(boot, false);
-        Path journal = dir.resolve(JOURNAL);
-        Path marker = dir.resolve(UPDATE);
-        if (!Files.isRegularFile(journal, LinkOption.NOFOLLOW_LINKS)
-                || !Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("Recovery requires both regular journals");
-        byte[] bytes = readBytes(journal);
-        byte[] updateBytes = readBytes(marker);
-        Active active = readActive(bytes);
-        Update update = readUpdate(updateBytes);
-        if (!boot.equals(active.boot) || !boot.equals(update.boot) || update.previous
-                || !active.updateId.equals(update.id) || !active.pending || !active.reconciling
-                || active.write != null)
-            throw new IOException("Pending checkpoint does not match the current migration and boot");
-        if (requireMatch) requirePartialRestore(active);
-
+        Recovery recovery = new Recovery(dir, boot);
+        List<List<String>> proposed = recovery.legacyRestoreTarget();
+        if (requireMatch) requirePartialRestore(recovery.active);
         List<List<String>> observed = stableSnapshot(io);
-        List<List<String>> proposed = plan(active, active.image, Collections.emptySet(), false).image;
         String comparison = observed.equals(proposed) ? "TARGET"
-                : observed.equals(active.image) ? "CHECKPOINT" : "DIVERGED";
+                : observed.equals(recovery.active.image) ? "CHECKPOINT" : "DIVERGED";
         if (requireMatch && comparison.equals("DIVERGED"))
             throw new IOException("Live lists do not match either reviewed image");
-        return comparison + " " + digest(bytes) + " " + digest(updateBytes)
+        return comparison + " " + digest(recovery.journalBytes) + " " + digest(recovery.markerBytes)
                 + " " + digestPair(observed) + " " + digestPair(proposed)
                 + " " + observed.get(0).size() + " " + observed.get(1).size();
+    }
+
+    private static final class Recovery {
+        final Path journal;
+        final Path marker;
+        final byte[] journalBytes;
+        final byte[] markerBytes;
+        final Active active;
+
+        Recovery(Path dir, String boot) throws IOException {
+            identity(boot, false);
+            journal = dir.resolve(JOURNAL);
+            marker = dir.resolve(UPDATE);
+            journalBytes = regularBytes(journal);
+            markerBytes = regularBytes(marker);
+            active = readActive(journalBytes);
+            Update update = readUpdate(markerBytes);
+            if (!boot.equals(active.boot) || !boot.equals(update.boot) || update.previous
+                    || !active.updateId.equals(update.id))
+                throw new IOException("Pending checkpoint does not match the current migration and boot");
+        }
+
+        List<List<String>> legacyRestoreTarget() throws IOException {
+            if (!active.pending || !active.reconciling || active.write != null)
+                throw new IOException("Expected a pending legacy checkpoint");
+            return plan(active, active.image, Collections.emptySet(), false).image;
+        }
+
+        void requireUnchanged() throws IOException {
+            if (!Arrays.equals(journalBytes, regularBytes(journal))
+                    || !Arrays.equals(markerBytes, regularBytes(marker)))
+                throw new IOException("Recovery journals changed during inventory");
+        }
+
+        private static byte[] regularBytes(Path path) throws IOException {
+            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                throw new IOException("Recovery requires both regular journals");
+            return readBytes(path);
+        }
+    }
+
+    /** Fresh host-admitted Enable following a stopped-code handoff. Caller holds FD9 throughout. */
+    static int enableFromRestoreTarget(Path dir, String boot, InventorySource inventory, IO io)
+            throws Exception {
+        Recovery recovery = new Recovery(dir, boot);
+        Active active = recovery.active;
+        Active baseline;
+        if (!active.enabled && active.write != null && active.write.enable) {
+            // A queued new setter must already have produced its entire ordered afterimage.
+            baseline = confirmedWrite(active, active.write);
+        } else if ((!active.enabled && active.checkpointDirection == Direction.ENABLE)
+                || (active.enabled && !active.pending && !active.reconciling)) {
+            baseline = active;
+        } else {
+            requirePartialRestore(active);
+            // The legacy restore target contains only external entries. Never inherit its old ownership.
+            baseline = new Active(boot, active.updateId, recovery.legacyRestoreTarget(), emptyPair(),
+                    false, false, false);
+        }
+        requireCurrent(io, baseline.image);
+        List<String> declared = inventory.classes();
+        if (declared.isEmpty()) throw new IOException("Empty current-user activity inventory");
+        Set<String> desired = classes(declared);
+        for (List<String> owned : baseline.owned) {
+            if (!desired.containsAll(owned)) throw new IOException("Recovery would remove owned entries");
+        }
+        requireCurrent(io, baseline.image);
+        recovery.requireUnchanged();
+        Active target = plan(baseline, baseline.image, desired, true);
+        if (!active.pending && !active.reconciling) {
+            if (!target.image.equals(active.image)) throw new IOException("Settled inventory changed");
+        } else {
+            applyPlan(recovery.journal, baseline, baseline.image, target, true, io);
+        }
+        return declared.size();
     }
 
     private static String digestPair(List<List<String>> pair) throws Exception {
@@ -352,9 +413,15 @@ public final class Txn {
             state = reconcileWrite(journal, state, current);
             current = stableSnapshot(io);
         }
-        Active target = plan(state, current, desired, enable);
+        applyPlan(journal, state, current, plan(state, current, desired, enable), !sameBoot, io);
+        return declared.size();
+    }
+
+    private static void applyPlan(Path journal, Active state, List<List<String>> current,
+                                  Active target, boolean forceSave, IO io) throws Exception {
+        boolean enable = target.enabled;
         preflight(io, current, target.image);
-        Files.createDirectories(dir);
+        Files.createDirectories(journal.getParent());
         List<List<String>> owned = new ArrayList<>();
         for (int i = 0; i < FIELDS.length; i++) {
             List<String> retained = new ArrayList<>(state.owned.get(i));
@@ -369,19 +436,18 @@ public final class Txn {
                 owned.set(i, target.owned.get(i));
                 continue;
             }
-            Active before = new Active(boot, updateId, current, new ArrayList<>(owned), false,
-                    wasEnabled, true, null, direction);
+            Active before = new Active(state.boot, state.updateId, current, new ArrayList<>(owned), false,
+                    state.enabled, true, null, direction);
             PendingWrite write = new PendingWrite(enable, i, target.image.get(i), target.owned.get(i));
             saved = writeField(journal, before, write, io);
             current = saved.image;
             owned.set(i, target.owned.get(i));
         }
         requireCurrent(io, target.image);
-        if (!sameBoot || saved.reconciling || saved.enabled != enable || !saved.image.equals(target.image)
+        if (forceSave || saved.reconciling || saved.enabled != enable || !saved.image.equals(target.image)
                 || !saved.owned.equals(target.owned)) {
             saveActive(journal, target);
         }
-        return declared.size();
     }
 
     private static void requirePartialRestore(Active active) throws IOException {
