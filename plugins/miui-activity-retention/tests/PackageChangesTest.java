@@ -20,6 +20,10 @@ public final class PackageChangesTest {
         check(reboot.observe((since, user) -> { check(since == 0); return 1; }));
         reboot.record();
         check(!reboot.observe((since, user) -> { check(since == 1); return null; }));
+        Files.write(dir.resolve("activity-package-sequence"), new byte[]{(byte) 0xff});
+        check(reboot.observe((since, user) -> { check(since == 0); return 45; }));
+        reboot.record();
+        check(!reboot.observe((since, user) -> { check(since == 45); return null; }));
         System.out.println("Package change cursor, failed scan, user switch and reboot checks passed");
     }
 

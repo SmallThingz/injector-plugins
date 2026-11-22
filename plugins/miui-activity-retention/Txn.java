@@ -28,11 +28,14 @@ public final class Txn {
     private static final int TXN1 = 0x54584e31;
     private static final int TXN2 = 0x54584e32;
     private static final int TXN3 = 0x54584e33;
+    private static final int TXN4 = 0x54584e34; // Confirmed intermediate checkpoint with request direction.
     private static final int UPDATE1 = 0x54585531;
     private static final int MAX_JOURNAL_BYTES = 16 * 1024 * 1024;
     private static final Pattern CLASS_NAME = Pattern.compile(
             "([\\p{javaJavaIdentifierStart}][\\p{javaJavaIdentifierPart}]*\\.)+"
             + "[\\p{javaJavaIdentifierStart}][\\p{javaJavaIdentifierPart}]*");
+
+    private enum Direction { ENABLE, DISABLE }
 
     private static final class Active {
         final String boot;
@@ -44,14 +47,17 @@ public final class Txn {
         final boolean enabled;
         final boolean reconciling;
         final PendingWrite write;
+        // Legacy intermediate TXN2 checkpoints have no direction.
+        final Direction checkpointDirection;
 
         Active(String boot, String updateId, List<List<String>> image, List<List<String>> owned,
                boolean pending, boolean enabled, boolean reconciling) {
-            this(boot, updateId, image, owned, pending, enabled, reconciling, null);
+            this(boot, updateId, image, owned, pending, enabled, reconciling, null, null);
         }
 
         Active(String boot, String updateId, List<List<String>> image, List<List<String>> owned,
-               boolean pending, boolean enabled, boolean reconciling, PendingWrite write) {
+               boolean pending, boolean enabled, boolean reconciling, PendingWrite write,
+               Direction checkpointDirection) {
             this.boot = boot;
             this.updateId = updateId;
             this.image = image;
@@ -60,6 +66,7 @@ public final class Txn {
             this.enabled = enabled;
             this.reconciling = reconciling;
             this.write = write;
+            this.checkpointDirection = checkpointDirection;
         }
     }
 
@@ -322,16 +329,16 @@ public final class Txn {
         }
         String updateId = state == null ? "" : state.updateId;
         boolean wasEnabled = state != null && state.enabled;
+        List<List<String>> current = stableSnapshot(io);
         if (!sameBoot && !enable) {
             // Ownership is boot-local. An old journal conveys no ownership over a new boot's lists.
-            saveActive(journal, new Active(boot, updateId, emptyPair(), emptyPair(), false, false, false));
+            saveActive(journal, new Active(boot, updateId, current, emptyPair(), false, false, false));
             return;
         }
 
-        List<List<String>> current = stableSnapshot(io);
         if (!sameBoot) state = new Active(boot, updateId, current, emptyPair(), false, wasEnabled, false);
         if (state.write != null) {
-            state = reconcileWrite(journal, state, current, desired, enable, io);
+            state = reconcileWrite(journal, state, current);
             current = stableSnapshot(io);
         }
         Active target = plan(state, current, desired, enable);
@@ -344,15 +351,17 @@ public final class Txn {
             owned.add(retained);
         }
         Active saved = state;
+        Direction direction = enable ? Direction.ENABLE : Direction.DISABLE;
         for (int step = 0; step < FIELDS.length; step++) {
             int i = enable ? step : FIELDS.length - 1 - step;
             if (current.get(i).equals(target.image.get(i))) {
                 owned.set(i, target.owned.get(i));
                 continue;
             }
-            Active before = new Active(boot, updateId, current, new ArrayList<>(owned), false, wasEnabled, true);
+            Active before = new Active(boot, updateId, current, new ArrayList<>(owned), false,
+                    wasEnabled, true, null, direction);
             PendingWrite write = new PendingWrite(enable, i, target.image.get(i), target.owned.get(i));
-            saved = writeField(journal, before, write, current, before, io);
+            saved = writeField(journal, before, write, io);
             current = saved.image;
             owned.set(i, target.owned.get(i));
         }
@@ -373,49 +382,33 @@ public final class Txn {
     private static void reconcilePendingDisable(Path journal, Active state, IO io) throws Exception {
         requirePartialRestore(state);
         List<List<String>> current = stableSnapshot(io);
-        Active target = plan(state, current, Collections.emptySet(), false);
-        if (!current.equals(target.image)) {
-            // This is a fresh Disable, so derive its only write from current HIDE and saved ownership.
-            preflight(io, current, target.image);
-            List<String> retained = new ArrayList<>(state.owned.get(0));
-            retained.retainAll(new HashSet<>(current.get(0)));
-            Active before = new Active(state.boot, state.updateId, current,
-                    Arrays.asList(retained, Collections.emptyList()), false, true, true);
-            PendingWrite write = new PendingWrite(false, 0, target.image.get(0), target.owned.get(0));
-            writeField(journal, before, write, current, state, io);
-        }
+        Active target = plan(state, state.image, Collections.emptySet(), false);
+        if (!current.equals(target.image))
+            throw new IOException("Pending legacy restore requires the observed target");
         requireCurrent(io, target.image);
         saveActive(journal, target);
     }
 
-    private static Active reconcileWrite(Path journal, Active state, List<List<String>> current,
-                                         Set<String> desired, boolean enable, IO io) throws Exception {
+    private static Active reconcileWrite(Path journal, Active state, List<List<String>> current)
+            throws IOException {
         PendingWrite write = state.write;
         List<String> observed = current.get(write.field);
-        if (observed.equals(write.image)) {
-            Active checkpoint = confirmedWrite(state, write);
-            saveActive(journal, checkpoint);
-            return checkpoint;
+        if (observed.equals(state.image.get(write.field))) {
+            // The one-way setter may still be queued even after repeated reads of the preimage.
+            throw new IOException("Awaiting confirmed afterimage for " + FIELDS[write.field]);
         }
-        if (!observed.equals(state.image.get(write.field))) {
+        if (!observed.equals(write.image))
             throw new IOException("Pending write differs from both saved images for " + FIELDS[write.field]);
-        }
-        if (write.enable != enable) {
-            throw new IOException("Pending preimage requires a fresh " + (write.enable ? "Enable" : "Disable"));
-        }
-        Active target = plan(state, current, desired, enable);
-        if (!write.image.equals(target.image.get(write.field)) || !write.owned.equals(target.owned.get(write.field))) {
-            throw new IOException("Pending preimage requires the same target for " + FIELDS[write.field]);
-        }
-        preflight(io, current, replace(current, write.field, write.image));
-        return writeField(journal, state, write, current, state, io);
+        Active checkpoint = confirmedWrite(state, write);
+        saveActive(journal, checkpoint);
+        return checkpoint;
     }
 
-    private static Active writeField(Path journal, Active before, PendingWrite write,
-                                     List<List<String>> current, Active rejectedState, IO io) throws Exception {
+    private static Active writeField(Path journal, Active before, PendingWrite write, IO io) throws Exception {
+        List<List<String>> current = before.image;
         requireCurrent(io, current);
         saveActive(journal, new Active(before.boot, before.updateId, before.image, before.owned,
-                true, before.enabled, true, write));
+                true, before.enabled, true, write, null));
         List<List<String>> after = replace(current, write.field, write.image);
         boolean attempted = false;
         try {
@@ -425,7 +418,7 @@ public final class Txn {
         } catch (Exception failure) {
             if (!attempted || failure instanceof WriteRejectedException) {
                 try {
-                    saveActive(journal, rejectedState);
+                    saveActive(journal, before);
                 } catch (IOException checkpointFailure) {
                     failure.addSuppressed(checkpointFailure);
                 }
@@ -440,7 +433,8 @@ public final class Txn {
 
     private static Active confirmedWrite(Active before, PendingWrite write) {
         return new Active(before.boot, before.updateId, replace(before.image, write.field, write.image),
-                replace(before.owned, write.field, write.owned), false, before.enabled, true);
+                replace(before.owned, write.field, write.owned), false, before.enabled, true, null,
+                write.enable ? Direction.ENABLE : Direction.DISABLE);
     }
 
     private static Update requireCommittedUpdate(Path dir, Active active) throws IOException {
@@ -461,6 +455,8 @@ public final class Txn {
         Active active = readActive(readBytes(dir.resolve(JOURNAL)));
         requireCommittedUpdate(dir, active);
         if (active.pending || !active.enabled) throw new IOException("Transaction is not fully enabled");
+        if (active.reconciling && active.checkpointDirection != Direction.ENABLE)
+            throw new IOException("Explicit request required after interrupted restore or unknown direction");
         return active;
     }
 
@@ -606,7 +602,7 @@ public final class Txn {
     private static Active readActive(byte[] bytes) throws IOException {
         try (DataInputStream in = stream(bytes)) {
             int version = in.readInt();
-            if (version != TXN2 && version != TXN3) throw new IOException("Unknown transaction journal");
+            if (version != TXN2 && version != TXN3 && version != TXN4) throw new IOException("Unknown transaction journal");
             String boot = in.readUTF();
             String id = in.readUTF();
             identity(boot, false);
@@ -621,6 +617,13 @@ public final class Txn {
             }
             for (int i = 0; i < FIELDS.length; i++) {
                 checkOwnership(image.get(i), owned.get(i));
+            }
+            Direction direction = null;
+            if (version == TXN4) {
+                int operation = in.readUnsignedByte();
+                if (pending != 0 || reconciling != 1 || operation > 1)
+                    throw new IOException("Invalid confirmed checkpoint");
+                direction = operation == 1 ? Direction.ENABLE : Direction.DISABLE;
             }
             PendingWrite write = null;
             if (version == TXN3) {
@@ -639,7 +642,7 @@ public final class Txn {
                 write = new PendingWrite(operation == 1, field, after, afterOwned);
             }
             end(in);
-            return new Active(boot, id, image, owned, pending == 1, enabled == 1, reconciling == 1, write);
+            return new Active(boot, id, image, owned, pending == 1, enabled == 1, reconciling == 1, write, direction);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid transaction journal", e);
         }
@@ -698,7 +701,7 @@ public final class Txn {
 
     private static void saveActive(Path path, Active active) throws IOException {
         save(path, out -> {
-            out.writeInt(active.write == null ? TXN2 : TXN3);
+            out.writeInt(active.write != null ? TXN3 : active.checkpointDirection != null ? TXN4 : TXN2);
             out.writeUTF(active.boot);
             out.writeUTF(active.updateId);
             writePair(out, active.image);
@@ -706,6 +709,7 @@ public final class Txn {
             out.writeBoolean(active.pending);
             out.writeBoolean(active.enabled);
             out.writeBoolean(active.reconciling);
+            if (active.checkpointDirection != null) out.writeBoolean(active.checkpointDirection == Direction.ENABLE);
             if (active.write != null) {
                 out.writeBoolean(active.write.enable);
                 out.writeByte(active.write.field);

@@ -14,3 +14,4 @@ java -cp "$classpath" ParcelCapacityTest
 java -cp "$classpath" PackageChangesTest "$work/cursor"
 mkdir "$work/journal"
 java -cp "$classpath" TxnTest "$work/journal"
+bash tests/inspection-lock.sh "$work/lock-test"

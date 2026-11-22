@@ -36,8 +36,12 @@ final class PackageChanges {
 
     boolean observe(ReadSequence reader) throws Exception {
         String prefix = boot + " " + user + " ";
-        List<String> previous = Files.exists(path) ? Files.readAllLines(path, StandardCharsets.US_ASCII)
-                : java.util.Collections.emptyList();
+        List<String> previous;
+        try {
+            previous = Files.readAllLines(path, StandardCharsets.US_ASCII);
+        } catch (IOException unavailableCursor) {
+            previous = java.util.Collections.emptyList();
+        }
         boolean hasCursor = previous.size() == 1 && previous.get(0).startsWith(prefix);
         int since = 0;
         if (hasCursor) {

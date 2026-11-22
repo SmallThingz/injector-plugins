@@ -13,7 +13,10 @@ cd "$PLUGIN_STATE_DIR"
 # The active 0.1 hook uses this same lock and state directory.
 if [ "$INJECTOR_EVENT" = inspect-state ] || [ "$INJECTOR_EVENT" = inspect-recovery ] ||
     { [ "$INJECTOR_EVENT" = inspect-update ] && [ "${INJECTOR_RECOVERY_HANDOFF-}" = 1 ]; }; then
-    [ -f activity-retention.lock ] && [ ! -L activity-retention.lock ]
+    [ -f activity-retention.lock ] && [ ! -L activity-retention.lock ] || {
+        echo "Missing or invalid activity-retention lock" >&2
+        exit 1
+    }
     exec 9<activity-retention.lock
     flock -n 9 9>&9
     CLASSPATH="$INJECTOR_PLUGIN_DIR/activity-lists.jar" \

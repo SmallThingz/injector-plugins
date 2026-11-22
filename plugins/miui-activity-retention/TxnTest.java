@@ -30,6 +30,9 @@ public final class TxnTest {
         int attempts;
         int rejectOn;
         int unknownBeforeOn;
+        int queueOn;
+        String queuedField;
+        List<String> queuedValue;
         int loseReplyOn;
         int killAfterWriteOn;
         int driftOn;
@@ -71,6 +74,11 @@ public final class TxnTest {
             attempts++;
             if (attempts == rejectOn) {
                 throw new Txn.WriteRejectedException("Binder rejected before dispatch");
+            }
+            if (attempts == queueOn) {
+                queuedField = field;
+                queuedValue = new ArrayList<>(value);
+                throw new IOException("Queued one-way setter, reply lost");
             }
             if (attempts == unknownBeforeOn) throw new IOException("Binder outcome unknown");
             values.put(field, new ArrayList<>(value));
@@ -552,52 +560,30 @@ public final class TxnTest {
         expect(Arrays.asList(BASE_HIDE, BASE_SHOW), h.pair());
     }
 
-    private static void reconcileOwnedEntries(Path root, boolean loseReply) throws Exception {
-        Host h = new Host(root, loseReply ? "partial-restore-lost" : "partial-restore-owned");
+    private static void legacyQueuedRestore(Path root) throws Exception {
+        Host h = new Host(root, "legacy-queued-restore");
         h.oldPendingDisable();
         Path journal = h.dir.resolve(JOURNAL);
         Path marker = h.dir.resolve(UPDATE);
         byte[] pending = Files.readAllBytes(journal);
         byte[] migration = Files.readAllBytes(marker);
         int attempts = h.attempts;
-
+        refused(() -> h.disable(BOOT)); // The original HIDE restore could still be queued.
         h.values.get(HIDE).add("new.A");
         refused(() -> h.disable(BOOT));
-        expect(attempts, h.attempts);
-        sameBytes(pending, Files.readAllBytes(journal));
         h.values.get(HIDE).remove(h.values.get(HIDE).size() - 1);
-
-        List<String> externalHide = new ArrayList<>(BASE_HIDE);
-        externalHide.add(0, "foreign.Hide");
-        h.values.get(HIDE).add(0, "foreign.Hide");
         h.values.get(SHOW).add("foreign.Show");
-        List<List<String>> target = Arrays.asList(externalHide, new ArrayList<>(h.values.get(SHOW)));
-        h.failPreflight = HIDE;
         refused(() -> h.disable(BOOT));
-        expect(attempts, h.attempts);
+        h.values.put(HIDE, new ArrayList<>(BASE_HIDE));
+        refused(() -> h.disable(BOOT));
         sameBytes(pending, Files.readAllBytes(journal));
-        h.failPreflight = null;
+        expect(true, h.values.get(SHOW).contains("foreign.Show"));
 
-        h.calls.clear();
-        if (loseReply) {
-            h.loseReplyOn = h.writes + 1;
-            refused(() -> h.disable(BOOT));
-            refused(() -> Txn.inspectState(h.dir, BOOT, h));
-        } else {
-            h.disable(BOOT);
-            expectReadOnlyProof(h, "INACTIVE");
-        }
-        expect(Arrays.asList("preflight hide_self", "set hide_self"), h.calls);
-        expect(target, h.pair());
-        h.calls.clear();
+        h.values.put(SHOW, new ArrayList<>(BASE_SHOW));
         h.disable(BOOT);
-        expect(Collections.emptyList(), h.calls);
         expectReadOnlyProof(h, "INACTIVE");
+        expect(attempts, h.attempts);
         sameBytes(migration, Files.readAllBytes(marker));
-        h.enable(BOOT, DECLARED);
-        h.disable(BOOT);
-        expectReadOnlyProof(h, "INACTIVE");
-        expect(target, h.pair());
     }
 
     private static void interruptedOrdinaryWrites(Path root) throws Exception {
@@ -625,7 +611,7 @@ public final class TxnTest {
                     refused(request);
                     expect(initialWrites + 1, h.writes);
                     byte[] checkpoint = Files.readAllBytes(journal);
-                    expect(0x54584e32, new DataInputStream(new ByteArrayInputStream(checkpoint)).readInt());
+                    expect(0x54584e34, new DataInputStream(new ByteArrayInputStream(checkpoint)).readInt());
                     h.failPreflight = null;
                 }
                 request.run();
@@ -641,25 +627,84 @@ public final class TxnTest {
         }
     }
 
-    private static void retryPendingPreimage(Path root) throws Exception {
-        Host h = new Host(root, "ordinary-preimage");
-        h.unknownBeforeOn = 1;
-        refused(() -> h.enable(BOOT, DECLARED));
-        Path journal = h.dir.resolve(JOURNAL);
-        byte[] pending = Files.readAllBytes(journal);
-        refused(() -> h.disable(BOOT));
-        refused(() -> h.enable(BOOT, Collections.singletonList("new.Changed")));
-        h.values.get(HIDE).add("foreign.Drift");
-        refused(() -> h.enable(BOOT, DECLARED));
-        expect(1, h.attempts);
-        sameBytes(pending, Files.readAllBytes(journal));
-        h.values.get(HIDE).remove(h.values.get(HIDE).size() - 1);
-        h.values.get(SHOW).add("foreign.Show");
+    private static void queuedPendingPreimage(Path root) throws Exception {
+        for (boolean enable : Arrays.asList(false, true)) {
+            Host h = new Host(root, "ordinary-queued-" + enable);
+            if (!enable) h.enable(BOOT, DECLARED);
+            Action request = enable ? () -> h.enable(BOOT, DECLARED) : () -> h.disable(BOOT);
+            int first = h.attempts + 1;
+            h.queueOn = first;
+            refused(request);
+            Path journal = h.dir.resolve(JOURNAL);
+            byte[] pending = Files.readAllBytes(journal);
+            refused(request);
+            if (enable) {
+                refused(() -> h.disable(BOOT));
+                refused(() -> h.enable(BOOT, Collections.singletonList("new.Changed")));
+            } else {
+                refused(() -> h.enable(BOOT, DECLARED));
+            }
+            h.values.get(h.queuedField).add("foreign.Drift");
+            refused(request);
+            h.values.get(h.queuedField).remove("foreign.Drift");
+            refused(() -> Txn.requireEnabled(h.dir));
+            expect(first, h.attempts);
+            sameBytes(pending, Files.readAllBytes(journal));
+
+            // Complete the original queued operation. The fresh request needs only the other field.
+            String other = enable ? SHOW : HIDE;
+            h.values.get(other).add("foreign.WhileQueued");
+            h.values.put(h.queuedField, h.queuedValue);
+            request.run();
+            expect(first + 1, h.attempts);
+            expect(true, h.values.get(other).contains("foreign.WhileQueued"));
+            expectReadOnlyProof(h, enable ? "ACTIVE" : "INACTIVE");
+        }
+    }
+
+    private static void interruptedDisableAdmission(Path root) throws Exception {
+        for (boolean rejected : Arrays.asList(false, true)) {
+            Host h = new Host(root, "interrupted-disable-" + rejected);
+            h.enable(BOOT, DECLARED);
+            h.writes = 0;
+            h.hideReadsAfterFirst = 0;
+            if (rejected) h.rejectOn = h.attempts + 2;
+            else h.failReadBeforeSecond = 4; // Stop after the first confirmed field was saved.
+            refused(() -> h.disable(BOOT));
+            expect(BASE_SHOW, h.values.get(SHOW));
+            expect(1, h.writes);
+            int attempts = h.attempts;
+            Path journal = h.dir.resolve(JOURNAL);
+            byte[] checkpoint = Files.readAllBytes(journal);
+            refused(() -> Txn.requireEnabled(h.dir)); // Entry gate for interval, boot and Run.
+            sameBytes(checkpoint, Files.readAllBytes(journal));
+            expect(attempts, h.attempts);
+            if (rejected) {
+                // TXN2 ended with the flags and did not include the TXN4 direction byte.
+                expect(0x54584e34, new DataInputStream(new ByteArrayInputStream(checkpoint)).readInt());
+                byte[] legacy = Arrays.copyOf(checkpoint, checkpoint.length - 1);
+                legacy[3] = 0x32;
+                Files.write(journal, legacy);
+                refused(() -> Txn.requireEnabled(h.dir));
+                sameBytes(legacy, Files.readAllBytes(journal));
+            }
+            h.disable(BOOT);
+            expect(attempts + 1, h.attempts);
+            expectReadOnlyProof(h, "INACTIVE");
+        }
+    }
+
+    private static void rebootDisableProof(Path root) throws Exception {
+        Host h = new Host(root, "reboot-disable-proof");
         h.enable(BOOT, DECLARED);
-        expect(2, h.writes);
-        h.disable(BOOT);
-        expect(appendMissing(BASE_SHOW, Collections.singletonList("foreign.Show")), h.values.get(SHOW));
-        expectReadOnlyProof(h, "INACTIVE");
+        h.values.put(HIDE, Arrays.asList("new.A", "vendor.NewBoot", "vendor.NewBoot"));
+        h.values.put(SHOW, Collections.singletonList("vendor.Show"));
+        List<List<String>> baseline = h.pair();
+        int attempts = h.attempts;
+        h.disable(NEXT_BOOT);
+        expect(true, Txn.inspectState(h.dir, NEXT_BOOT, h).startsWith("INACTIVE "));
+        expect(baseline, h.pair());
+        expect(attempts, h.attempts);
     }
 
     public static void main(String[] args) throws Exception {
@@ -672,10 +717,11 @@ public final class TxnTest {
         refreshConflictsAndBoot(root);
         lifecycleProofAndRepeatCycles(root);
         inspectPartialRestore(root);
-        reconcileOwnedEntries(root, false);
-        reconcileOwnedEntries(root, true);
+        legacyQueuedRestore(root);
         interruptedOrdinaryWrites(root);
-        retryPendingPreimage(root);
+        queuedPendingPreimage(root);
+        interruptedDisableAdmission(root);
+        rebootDisableProof(root);
         System.out.println("TxnTest passed");
     }
 }
