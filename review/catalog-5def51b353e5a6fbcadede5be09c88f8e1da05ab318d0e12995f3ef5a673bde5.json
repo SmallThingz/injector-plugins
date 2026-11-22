@@ -1,0 +1,19 @@
+{
+  "name": "Injector MIUI package-change review",
+  "description": "Review candidate for package-change refresh of the MIUI activity retention lists.",
+  "plugins": [
+    {
+      "name": "MIUI Floating Window Unlimiter",
+      "description": "Adjusts MIUI\u2019s floating-window retention lists.",
+      "icon": "windows",
+      "release": {
+        "repository": "https://github.com/SmallThingz/injector-plugins",
+        "commit": "1fa871e327e2167d0017a0a40f0bfb275befd861",
+        "tag": "plugins-20261123-miui-package-changes-1",
+        "asset": "miui-activity-retention.zip",
+        "sha256": "87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197",
+        "manifestPath": "plugins/miui-activity-retention/plugin.json"
+      }
+    }
+  ]
+}
