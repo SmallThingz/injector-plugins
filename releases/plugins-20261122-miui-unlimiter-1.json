@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "f1b03123046ae316ccad2966909455866af4c01d",
+  "tag": "plugins-20261122-miui-unlimiter-1",
+  "assets": {
+    "miui-activity-retention.zip": "3a47b11bced6a87552b108d7a030dd0f2a365fe93ea40c815422ce40011fc245"
+  }
+}

@@ -33,7 +33,7 @@ CATALOG_DESCRIPTIONS = {
     "battery-charge-limit": "Requires a supported charge controller.",
     "cpu-control": "Per-policy frequency limits, governors and live monitoring on amethyst OS3.0.303.",
     "caffeine": "Keep the screen awake for 30 minutes, 1 hour, 5 hours or until stopped.",
-    "miui-activity-retention": "Keep selected launcher activities in floating windows on amethyst OS3.0.303.0.",
+    "miui-activity-retention": "Matching activities from selected apps can stay in floating windows on amethyst OS3.0.303.0.WOPINXM.",
 }
 CATALOG_ICONS = {
     "battery-charge-limit": "battery", "cpu-control": "cpu", "caffeine": "plugin",

@@ -8,8 +8,9 @@ Default catalog for [Injector](https://github.com/SmallThingz/Injector). Plugins
 | [Display timeout](plugins/display-timeout/README.md) | Apply and Disable restored the original screen timeout. |
 | [CPU frequency control](plugins/cpu-control/README.md) | On amethyst, two policy0 governor cycles restored the original governor. The ceiling attempt stopped at its pre-write guard. |
 | [Battery charge limit](plugins/battery-charge-limit/README.md) | Ordinary catalog replacement on amethyst verified the installed pin and native executable. Disable restored the owned setting to suspend=0. The final enabled session used thresholds 74/80 with no pending operation. Controller support varies by device. |
+| MIUI Floating Window Unlimiter | On amethyst OS3.0.303.0.WOPINXM, WindowManager reported eight WM-visible freeform tasks across five packages in one trial. The ninth attempt remained unclassified. Independent rendering and input at eight remain unverified. |
 
-The failing MIUI floating-window plugin is excluded from the current catalog. Its historical source and release remain available. Device apply/restore tests do not prove reboot reapplication or every recovery case; host fault tests cover rollback and external-change preservation separately.
+The historical `miui-floating-windows` plugin is excluded from the current catalog. Its source and release remain available. Device apply/restore tests do not prove reboot reapplication or every recovery case. Host fault tests cover rollback and external-change preservation separately.
 
 ## Release integrity
 
@@ -24,11 +25,13 @@ Injector checks the resolved tag, source manifest and downloaded package before 
 Requires Python 3 and Git. No plugin hook runs during packaging.
 
 ```sh
-git fetch origin tag plugins-20261122-controls-2
+git fetch origin --tags
 python3 package-catalog.py packages --check
-python3 package-catalog.py verify --release releases/plugins-20261122-caffeine-screen-off-1.json \
+python3 package-catalog.py verify --require-tag \
+  --release releases/plugins-20261122-miui-unlimiter-1.json \
   --retain battery-charge-limit=releases/plugins-20261122-controls-2.json \
-  --retain cpu-control=releases/plugins-20261122-controls-2.json
+  --retain cpu-control=releases/plugins-20261122-controls-2.json \
+  --retain caffeine=releases/plugins-20261122-caffeine-screen-off-1.json
 ```
 
 Packages use fixed member allowlists, ordering, timestamps and permissions. To publish changes: commit source and deterministic packages first, choose an unused release tag, create pins referencing that source commit, and generate the catalog with `package-catalog.py build`. Publish new assets, verify the remote tag target and every downloaded hash, then commit the catalog and release pins. Never move a published tag or replace its assets.
