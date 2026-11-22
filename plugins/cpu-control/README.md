@@ -1,6 +1,6 @@
 # CPU frequency control (pre-alpha)
 
-The accordion is a static profile for amethyst on HyperOS OS3.0.303.0.WOPINXM. All three policy groups offer the governors listed by the device's read-only root probe. The efficiency cores also offer five listed ceilings from 1228.8 to 1708.8 MHz. Enable applies the stored settings. Run applies edits while enabled.
+The accordion is a static profile for amethyst on HyperOS OS3.0.303.0.WOPINXM. All three policy groups offer the governors listed by the device's read-only root probe. Each group declares the recorded driver table. The CPU monitor filters the visible choices by live policy membership, driver steps, current minimum, original ceiling, hardware maximum and sysfs write permissions. A matching owned ceiling can be raised again within its original bounds. Current frequencies are displayed for readable policies including read-only policies. Enable applies the stored settings. Run applies edits while enabled.
 
 The first change to a setting saves its current value. The maximum-frequency choice writes its exact listed kHz value. The hook checks current CPU membership, available frequencies, live minimum, hardware maximum and captured ceiling at apply time. Current system limits can make a displayed step unavailable. The hook validates governor choices against each policy's live list.
 

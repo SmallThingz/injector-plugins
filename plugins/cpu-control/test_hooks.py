@@ -85,17 +85,10 @@ class CpuControl(unittest.TestCase):
         groups = {group['id'] for group in manifest['ui']['groups']}
         self.assertEqual(groups, set(POLICIES))
         inputs = {item['id']: item for item in manifest['ui']['inputs']}
-        self.assertEqual(set(inputs), {'policy0_max_khz', *(f'{p}_governor' for p in groups)})
+        self.assertEqual(set(inputs), {f'{p}_{field}' for p in groups for field in ('governor', 'max_khz')})
         self.assertEqual(inputs['policy0_max_khz']['group'], 'policy0')
         ceiling_options = inputs['policy0_max_khz']['options']
-        self.assertEqual(ceiling_options, [
-            {'value': 'system', 'label': 'System setting'},
-            {'value': '1228800', 'label': '1228.8 MHz'},
-            {'value': '1344000', 'label': '1344 MHz'},
-            {'value': '1497600', 'label': '1497.6 MHz'},
-            {'value': '1593600', 'label': '1593.6 MHz'},
-            {'value': '1708800', 'label': '1708.8 MHz'},
-        ])
+        self.assertEqual([o['value'] for o in ceiling_options], ['system', *POLICIES['policy0'][4].split()])
         for policy in groups:
             governor = inputs[policy + '_governor']
             self.assertEqual(governor['group'], policy)
@@ -118,6 +111,8 @@ class CpuControl(unittest.TestCase):
         self.put('policy0', 'scaling_min_freq', 1228800)
         for option in ceiling_options[1:]:
             ceiling = option['value']
+            if not 1228800 <= int(ceiling) < 1804800:
+                continue
             self.call('run', **(defaults | {'policy0_max_khz': ceiling}))
             self.assertEqual(self.active.read_text(), f'policy0 scaling_max_freq 1804800 {ceiling}\n')
             self.assertEqual(self.value('policy0', 'scaling_max_freq'), ceiling)
@@ -127,6 +122,21 @@ class CpuControl(unittest.TestCase):
             self.assertEqual(self.value(policy, 'scaling_max_freq'), str(ceiling))
             self.assertEqual(self.value(policy, 'scaling_governor'), 'walt')
         self.assertEqual(self.active.read_text(), '')
+
+    def test_declared_shared_ceiling_bindings_restore_each_policy(self):
+        inputs = json.loads((PACKAGE / 'plugin.json').read_text())['ui']['inputs']
+        for item in (item for item in inputs if item['id'].endswith('_max_khz')):
+            policy = item['group']
+            self.assertEqual(item['id'], policy + '_max_khz')
+            steps = {o['value'] for o in item['options']} - {'system'}
+            self.assertTrue(steps <= set(POLICIES[policy][4].split()))
+            choice = min((s for s in steps if int(s) >= POLICIES[policy][1]), key=int)
+            self.call('enable', **{item['id']: choice})
+            for other, (_, _, original, _, _) in POLICIES.items():
+                wanted = choice if other == policy else str(original)
+                self.assertEqual(self.value(other, 'scaling_max_freq'), wanted)
+            self.call('disable')
+            self.assertEqual(self.value(policy, 'scaling_max_freq'), str(POLICIES[policy][2]))
 
     def test_apply_edit_repeat_restore(self):
         settings = dict(policy4_governor='schedutil', policy4_percent=90, policy7_percent=90)

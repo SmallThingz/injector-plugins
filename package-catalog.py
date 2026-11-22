@@ -30,11 +30,11 @@ PACKAGE_FILES = {
 }
 CATALOG_DESCRIPTIONS = {
     "battery-charge-limit": "Requires a supported charge controller.",
-    "cpu-control": "Efficiency-core ceiling and per-policy governors; amethyst OS3.0.303.",
+    "cpu-control": "Per-policy frequency limits, governors and live monitoring on amethyst OS3.0.303.",
     "caffeine": "Timed or untimed screen-awake sessions across apps.",
 }
 CATALOG_ICONS = {"battery-charge-limit": "battery", "cpu-control": "cpu", "caffeine": "plugin"}
-DURATIONS = {"300", "900", "1800", "3600", "indefinite"}
+DURATIONS = {"300", "900", "1800", "3600", "18000", "indefinite"}
 PLUGIN_REFERENCE = re.compile(
     r'\$(?:INJECTOR_PLUGIN_DIR|\{INJECTOR_PLUGIN_DIR(?::\?)?\})/([^\s"\x27;|&()]+)'
 )
@@ -225,7 +225,8 @@ def committed_file(commit, path):
     return git("show", f"{commit}:{path}")
 
 
-def release_pin(path, require_tag=False):
+def release_pin(path, require_tag=False, plugins=None, historical=False):
+    plugins = tuple(PACKAGE_FILES if plugins is None else plugins)
     pin = document(path.read_bytes())
     if not isinstance(pin, dict) or set(pin) != {"repository", "commit", "tag", "assets"}:
         raise ValueError("Expected repository, commit, tag and assets in explicit release metadata")
@@ -236,8 +237,8 @@ def release_pin(path, require_tag=False):
     if not isinstance(pin["tag"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", pin["tag"]):
         raise ValueError("Invalid release tag")
     git("check-ref-format", f"refs/tags/{pin['tag']}")
-    if not isinstance(pin["assets"], dict) or set(pin["assets"]) != {p + ".zip" for p in PACKAGE_FILES}:
-        raise ValueError("Expected exactly battery, CPU and Caffeine release assets")
+    if not isinstance(pin["assets"], dict) or set(pin["assets"]) != {p + ".zip" for p in (PACKAGE_FILES if historical else plugins)}:
+        raise ValueError("Unexpected release asset set")
     if any(not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
            for digest in pin["assets"].values()):
         raise ValueError("Release asset hashes must be SHA-256")
@@ -245,13 +246,13 @@ def release_pin(path, require_tag=False):
     commit = pin["commit"]
     if git("rev-parse", "--verify", commit + "^{commit}").decode().strip() != commit:
         raise ValueError("Release pin does not identify a commit")
-    paths = [str(path) for p in PACKAGE_FILES for path in (Path("plugins") / p, package_path(p))]
+    paths = [str(path) for p in plugins for path in (Path("plugins") / p, package_path(p))]
     if git("diff", "--name-only", commit, "--", *paths).strip():
         raise ValueError("Working sources/packages differ from source A")
     if git("ls-files", "--others", "--exclude-standard", "--", *paths).strip():
         raise ValueError("Uncommitted plugin source/package files are absent from source A")
-    for plugin, names in PACKAGE_FILES.items():
-        for name in names:
+    for plugin in plugins:
+        for name in PACKAGE_FILES[plugin]:
             path = Path("plugins") / plugin / name
             if committed_file(commit, path) != regular_file(ROOT, path):
                 raise ValueError("Source A file differs: " + str(path))
@@ -321,12 +322,24 @@ def main(argv=None):
         sub.add_argument("--release", type=Path, required=True,
                          help="new release metadata; inherited/historical release.json is not assumed current")
         sub.add_argument("--catalog", type=Path, default=ROOT / "catalog.json")
+        sub.add_argument("--retain", action="append", default=[], metavar="PLUGIN=RELEASE",
+                         help="retain a plugin from a previous three-asset release")
         sub.add_argument("--require-tag", action="store_true", help="require matching local tag; no remote verification")
     args = parser.parse_args(argv)
     try:
-        pin = None if args.command == "packages" else release_pin(args.release, args.require_tag)
+        pins = {}
+        if args.command != "packages":
+            for spec in args.retain:
+                plugin, sep, path = spec.partition("=")
+                if not sep or plugin not in PACKAGE_FILES or plugin in pins:
+                    raise ValueError("Expected a unique known PLUGIN=RELEASE")
+                pins[plugin] = release_pin(Path(path), args.require_tag, [plugin], historical=True)
+            updated = [plugin for plugin in PACKAGE_FILES if plugin not in pins]
+            release = release_pin(args.release, args.require_tag, updated)
+            pins.update(dict.fromkeys(updated, release))
         outputs, entries, hashes = {}, [], {}
         for plugin in PACKAGE_FILES:
+            pin = pins.get(plugin)
             source = args.source_root.absolute() if pin is None else ROOT
             data, entry = package(plugin, pin, source)
             hashes[plugin] = sha256(data)
@@ -334,7 +347,7 @@ def main(argv=None):
                 outputs[output_path(args.package_dir / (plugin + ".zip"))] = data
             else:
                 entries.append(entry)
-        if pin is not None:
+        if pins:
             target = output_path(args.catalog, catalog=True)
             if target == args.release.resolve():
                 raise ValueError("Catalog must not overwrite the release pin")

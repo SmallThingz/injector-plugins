@@ -1,7 +1,7 @@
 {
   "id": "cpu-control",
   "name": "CPU frequency control",
-  "version": "0.1",
+  "version": "0.1.1",
   "description": "For amethyst on HyperOS OS3.0.303.0.WOPINXM. Current system frequency limits can prevent applying the efficiency-core ceiling.",
   "backend": "root",
   "runtime": "shell",
@@ -15,15 +15,29 @@
     "groups": [
       {
         "id": "policy0",
-        "label": "Efficiency cores · CPUs 0–3"
+        "label": "Efficiency cores · CPUs 0–3",
+        "cpuMembers": [
+          0,
+          1,
+          2,
+          3
+        ]
       },
       {
         "id": "policy4",
-        "label": "Performance cores · CPUs 4–6"
+        "label": "Performance cores · CPUs 4–6",
+        "cpuMembers": [
+          4,
+          5,
+          6
+        ]
       },
       {
         "id": "policy7",
-        "label": "Prime core · CPU 7"
+        "label": "Prime core · CPU 7",
+        "cpuMembers": [
+          7
+        ]
       }
     ],
     "inputs": [
@@ -58,7 +72,8 @@
             "value": "schedutil",
             "label": "schedutil"
           }
-        ]
+        ],
+        "choiceLayout": "grid"
       },
       {
         "id": "policy0_max_khz",
@@ -67,13 +82,60 @@
         "type": "choice",
         "default": "system",
         "options": [
-          {"value": "system", "label": "System setting"},
-          {"value": "1228800", "label": "1228.8 MHz"},
-          {"value": "1344000", "label": "1344 MHz"},
-          {"value": "1497600", "label": "1497.6 MHz"},
-          {"value": "1593600", "label": "1593.6 MHz"},
-          {"value": "1708800", "label": "1708.8 MHz"}
-        ]
+          {
+            "value": "system",
+            "label": "System setting"
+          },
+          {
+            "value": "441600",
+            "label": "441.6 MHz"
+          },
+          {
+            "value": "595200",
+            "label": "595.2 MHz"
+          },
+          {
+            "value": "787200",
+            "label": "787.2 MHz"
+          },
+          {
+            "value": "902400",
+            "label": "902.4 MHz"
+          },
+          {
+            "value": "1017600",
+            "label": "1017.6 MHz"
+          },
+          {
+            "value": "1113600",
+            "label": "1113.6 MHz"
+          },
+          {
+            "value": "1228800",
+            "label": "1228.8 MHz"
+          },
+          {
+            "value": "1344000",
+            "label": "1344 MHz"
+          },
+          {
+            "value": "1497600",
+            "label": "1497.6 MHz"
+          },
+          {
+            "value": "1593600",
+            "label": "1593.6 MHz"
+          },
+          {
+            "value": "1708800",
+            "label": "1708.8 MHz"
+          },
+          {
+            "value": "1804800",
+            "label": "1804.8 MHz"
+          }
+        ],
+        "choiceLayout": "grid"
       },
       {
         "id": "policy4_governor",
@@ -106,7 +168,8 @@
             "value": "schedutil",
             "label": "schedutil"
           }
-        ]
+        ],
+        "choiceLayout": "grid"
       },
       {
         "id": "policy7_governor",
@@ -139,11 +202,165 @@
             "value": "schedutil",
             "label": "schedutil"
           }
-        ]
+        ],
+        "choiceLayout": "grid"
+      },
+      {
+        "id": "policy4_max_khz",
+        "group": "policy4",
+        "label": "Maximum frequency",
+        "type": "choice",
+        "default": "system",
+        "options": [
+          {
+            "value": "system",
+            "label": "System setting"
+          },
+          {
+            "value": "480000",
+            "label": "480 MHz"
+          },
+          {
+            "value": "633600",
+            "label": "633.6 MHz"
+          },
+          {
+            "value": "787200",
+            "label": "787.2 MHz"
+          },
+          {
+            "value": "940800",
+            "label": "940.8 MHz"
+          },
+          {
+            "value": "1056000",
+            "label": "1056 MHz"
+          },
+          {
+            "value": "1190400",
+            "label": "1190.4 MHz"
+          },
+          {
+            "value": "1286400",
+            "label": "1286.4 MHz"
+          },
+          {
+            "value": "1401600",
+            "label": "1401.6 MHz"
+          },
+          {
+            "value": "1497600",
+            "label": "1497.6 MHz"
+          },
+          {
+            "value": "1612800",
+            "label": "1612.8 MHz"
+          },
+          {
+            "value": "1708800",
+            "label": "1708.8 MHz"
+          },
+          {
+            "value": "1824000",
+            "label": "1824 MHz"
+          },
+          {
+            "value": "1920000",
+            "label": "1920 MHz"
+          },
+          {
+            "value": "2016000",
+            "label": "2016 MHz"
+          },
+          {
+            "value": "2073600",
+            "label": "2073.6 MHz"
+          },
+          {
+            "value": "2208000",
+            "label": "2208 MHz"
+          },
+          {
+            "value": "2400000",
+            "label": "2400 MHz"
+          }
+        ],
+        "choiceLayout": "grid"
+      },
+      {
+        "id": "policy7_max_khz",
+        "group": "policy7",
+        "label": "Maximum frequency",
+        "type": "choice",
+        "default": "system",
+        "options": [
+          {
+            "value": "system",
+            "label": "System setting"
+          },
+          {
+            "value": "480000",
+            "label": "480 MHz"
+          },
+          {
+            "value": "633600",
+            "label": "633.6 MHz"
+          },
+          {
+            "value": "787200",
+            "label": "787.2 MHz"
+          },
+          {
+            "value": "960000",
+            "label": "960 MHz"
+          },
+          {
+            "value": "1094400",
+            "label": "1094.4 MHz"
+          },
+          {
+            "value": "1209600",
+            "label": "1209.6 MHz"
+          },
+          {
+            "value": "1324800",
+            "label": "1324.8 MHz"
+          },
+          {
+            "value": "1459200",
+            "label": "1459.2 MHz"
+          },
+          {
+            "value": "1651200",
+            "label": "1651.2 MHz"
+          },
+          {
+            "value": "1766400",
+            "label": "1766.4 MHz"
+          },
+          {
+            "value": "1900800",
+            "label": "1900.8 MHz"
+          },
+          {
+            "value": "2208000",
+            "label": "2208 MHz"
+          },
+          {
+            "value": "2304000",
+            "label": "2304 MHz"
+          },
+          {
+            "value": "2496000",
+            "label": "2496 MHz"
+          }
+        ],
+        "choiceLayout": "grid"
       }
     ],
     "presentation": {
       "icon": "cpu"
-    }
+    },
+    "monitor": "cpu"
   }
 }
