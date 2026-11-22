@@ -120,8 +120,11 @@ def validate_manifest(plugin, members):
         raise ValueError("Missing plugin name")
     hooks = manifest.get("hooks")
     expected_hooks = {"enable", "disable"}
-    if plugin != "miui-activity-retention":
+    universal = plugin == "miui-activity-retention" and "liveUpdate" in manifest
+    if plugin != "miui-activity-retention" or universal:
         expected_hooks.add("run")
+    if universal:
+        expected_hooks.add("configure")
     if not isinstance(hooks, dict) or set(hooks) != expected_hooks:
         raise ValueError(f"Unexpected hook events for {plugin}")
     if any(not isinstance(hook, str) or hook not in members for hook in hooks.values()):
@@ -129,12 +132,22 @@ def validate_manifest(plugin, members):
     if plugin == "miui-activity-retention":
         if (manifest.get("backend"), manifest.get("runtime")) != ("root", "shell") or set(hooks.values()) != {"hook.sh"}:
             raise ValueError("MIUI retention requires root/shell enable and disable hooks")
-        if manifest.get("triggers") or "session" in manifest:
+        if universal:
+            if manifest.get("liveUpdate") != {
+                    "fromSha256": "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337",
+                    "inspect": "hook.sh"}:
+                raise ValueError("Unexpected MIUI update source or inspection hook")
+            if manifest.get("triggers") != {"boot": True, "intervalMinutes": 15} or "session" in manifest:
+                raise ValueError("Expected MIUI package refresh triggers")
+        elif manifest.get("triggers") or "session" in manifest:
             raise ValueError("MIUI retention requires explicit toggles")
         if manifest.get("quickSettings") != {"icon": "windows", "behavior": "toggle"}:
             raise ValueError("Expected MIUI retention Quick Settings toggle")
         inputs = manifest.get("ui", {}).get("inputs")
-        if inputs != [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]:
+        if universal:
+            if inputs or manifest.get("ui", {}).get("presentation", {}).get("icon") != "windows":
+                raise ValueError("Universal MIUI retention requires the windows icon and no activity picker")
+        elif inputs != [{"id": "activities", "type": "activities", "label": "Apps", "default": ""}]:
             raise ValueError("Expected MIUI retention activities picker")
         checksum = f'{sha256(members["activity-lists.jar"])}  activity-lists.jar\n'
         if members["payload.sha256"] != checksum.encode("ascii"):
@@ -241,8 +254,11 @@ def package(plugin, pin=None, source_root=None):
     asset = f"{plugin}.zip"
     if sha256(data) != pin["assets"][asset]:
         raise ValueError("Rebuilt package differs from pinned release: " + asset)
+    description = CATALOG_DESCRIPTIONS[plugin]
+    if plugin == "miui-activity-retention" and "liveUpdate" in manifest:
+        description = manifest["description"]
     return data, {
-        "name": manifest["name"], "description": CATALOG_DESCRIPTIONS[plugin], "icon": CATALOG_ICONS[plugin],
+        "name": manifest["name"], "description": description, "icon": CATALOG_ICONS[plugin],
         "release": {"repository": pin["repository"], "commit": pin["commit"], "tag": pin["tag"],
                     "asset": asset, "sha256": pin["assets"][asset], "manifestPath": manifest_path.as_posix()},
     }

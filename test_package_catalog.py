@@ -246,6 +246,24 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "JAR checksum"):
             pack.package(plugin)
 
+    def test_miui_recovery_requires_reviewed_predecessor_and_schedule(self):
+        plugin = "miui-activity-retention"
+        path = f"plugins/{plugin}/plugin.json"
+        manifest = (ROOT / path).read_bytes()
+        self.write(path, manifest)
+        pack.package(plugin)
+        for update, error in (
+            (lambda m: m["liveUpdate"].update(fromSha256="0" * 64), "update source"),
+            (lambda m: m["liveUpdate"].update(inspect="other.sh"), "inspection hook"),
+            (lambda m: m["triggers"].update(intervalMinutes=5), "refresh triggers"),
+            (lambda m: m["hooks"].pop("configure"), "hook events"),
+        ):
+            with self.subTest(error=error):
+                self.write(path, manifest)
+                self.change_manifest(plugin, update)
+                with self.assertRaisesRegex(ValueError, error):
+                    pack.package(plugin)
+
     def test_missing_helper_and_late_descriptor_failure_write_nothing(self):
         helper = self.repo / "plugins/battery-charge-limit/session.sh"
         helper.unlink()
