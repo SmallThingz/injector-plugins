@@ -1,0 +1,17 @@
+{
+  "build_source_commit": "2f70c7165e83a00d25cb6d24b8863929090e1b35",
+  "version": "0.1.0",
+  "jar_sha256": "b54893d89ad7746f25ed96c25b04c5a55651d4cd259d681b7c9eb46d00d08772",
+  "zip_sha256": "11588d7da15c6009b8c8ed1d0d7fb0d7411aa677fa5f0f33c3339d49dab2e21b",
+  "zip_bytes": 25160,
+  "source_files": {
+    "plugins/miui-activity-retention/ActivityLists.java": "41bb464a36e0d6177887959b84fd5d689e6c3eb3f9425cad9c5ae4aefb312501",
+    "plugins/miui-activity-retention/Inventory.java": "2979fb8a1af9bf2e0084509c5a86d478b0f5c25a73721a07201ef8a9b281229d",
+    "plugins/miui-activity-retention/PackageChanges.java": "8f9ac3dbc07212dafc192c7db734db4eee21f98f9c0e792ec537559f0b1a9666",
+    "plugins/miui-activity-retention/ParcelCapacity.java": "cbb2420649d99d712550bcba53afab1dae71af061178388cbe976247649dc4f5",
+    "plugins/miui-activity-retention/Txn.java": "50a3d65b4d15bbb6eb1a99f658968bed45dc3198181a10f7803ce0d5152b7a6c"
+  },
+  "installed": false,
+  "physical_qualification": "Pending; previous unknown receipts remain unresolved. No device writes were made.",
+  "build_log": ".tmp/miui-reviewed-build.log"
+}

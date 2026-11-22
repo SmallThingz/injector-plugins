@@ -4,7 +4,7 @@ Battery and CPU workers were rebuilt from `d09e2a1` using Rust 1.99.1 and Androi
 
 The new Battery build includes controller-binding checks, cold-owner exclusion and live CONFIG tests. The CPU build preserves unresolved rollback evidence. Host regressions and six native packaging checks passed. These builds have not yet been installed or physically qualified. Battery enforcement requires powered stop/resume observations; threshold readback alone is insufficient.
 
-MIUI presentation now uses a Home accordion. Controller recovery fixes are still being integrated. Its previous physical failure and uncertain receipts remain unresolved; neither a changed manifest nor host tests establishes successful window behavior.
+MIUI presentation uses a Home accordion. Its reviewed controller now preserves pending writes and interrupted stop intent; the rebuilt JAR and private archive identities are recorded in `miui-reviewed-candidate.json`. Its previous physical failure and uncertain receipts remain unresolved; host tests and a rebuilt controller do not establish successful window behavior.
 
 Only Battery, CPU, Caffeine and MIUI Floating Window Unlimiter are intended default products. Historical animation, display-timeout and Frida examples are excluded. Old commits, release tags and published assets are unchanged. The private candidate artifacts are not a default-catalog promotion. A future publication needs a fresh tag and exact commit/asset pins.
 
