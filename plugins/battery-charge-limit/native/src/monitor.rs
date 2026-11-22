@@ -547,7 +547,17 @@ impl Controller {
 
     fn restore_receipt(&self, receipt: &mut Receipt) -> Result<()> {
         self.change(receipt, 0, None)?.require_applied()?;
-        self.check(receipt)?;
+        let node = self.bound_node(false)?;
+        #[cfg(not(target_os = "android"))]
+        fixture_pause("before-final-restore-read");
+        if !read_file(&node).is_ok_and(|value| value.trim_end_matches('\n') == "0") {
+            return Err(Error::conflict(
+                "Cannot verify input suspend restoration; journal retained",
+            ));
+        }
+        // The open descriptor can still read a retired attribute. Recheck the
+        // current binding while that descriptor is held, before retiring evidence.
+        self.bound_node(false)?;
         fs::rename(self.journal(), self.restored())?;
         Ok(())
     }

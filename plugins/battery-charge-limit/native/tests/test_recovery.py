@@ -2,8 +2,10 @@
 import os
 from pathlib import Path
 import select
+import signal
 import subprocess
 from tempfile import TemporaryDirectory
+import time
 import unittest
 
 FIRMWARE = "Redmi/amethyst_in/amethyst:16/BP2A.250605.031.A3/OS3.0.303.0.WOPINXM:user/release-keys"
@@ -170,6 +172,32 @@ class RecoveryTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertEqual(output, b"")
         self.assert_preserved(before)
+
+    def test_stop_retains_journal_if_attribute_changes_during_final_read(self):
+        self.environment["CHARGE_TEST_PAUSE"] = "before-final-restore-read"
+        monitor = self.start()
+        monitor.stdin.write(f"STOP {SESSION}\n".encode())
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            status = os.waitid(os.P_PID, monitor.pid,
+                               os.WSTOPPED | os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            if status is not None:
+                self.assertEqual(status.si_code, os.CLD_STOPPED)
+                self.assertEqual(status.si_status, signal.SIGSTOP)
+                break
+            time.sleep(.01)
+        else:
+            self.fail("Monitor did not reach the final restoration read")
+
+        self.assertEqual(self.suspend.read_text(), "0\n")
+        journal = self.journal.read_bytes()
+        self.replace_attribute()
+        monitor.send_signal(signal.SIGCONT)
+        output, log = monitor.communicate(timeout=3)
+        self.assertEqual(monitor.returncode, 3, log)
+        self.assertEqual(output, b"")
+        self.assert_preserved(journal)
+        self.assertEqual(self.suspend.with_name("retired").read_text(), "0\n")
 
     def test_cold_disable_refuses_same_session_while_owner_is_live(self):
         monitor = self.start()
