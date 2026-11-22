@@ -1,11 +1,14 @@
 mod lease;
 mod monitor;
+mod threshold;
 
 use lease::Lease;
-use monitor::{Controller, Error, Result};
+use monitor::{Controller as InputSuspend, Error, Result, WindowUpdate};
 use std::{
     env,
+    fs::File,
     io::{self, Write},
+    path::Path,
     process,
 };
 
@@ -30,36 +33,185 @@ fn percent(s: &str) -> Result<u8> {
         .ok_or_else(|| Error::failure("Invalid battery percentage"))
 }
 
+fn form_percent(value: &str) -> Option<u8> {
+    let mut digits = [0; 3];
+    let mut len = 0;
+    let mut bytes = value.bytes();
+    while let Some(byte) = bytes.next() {
+        // A decoded percentage can only contain decimal digits.
+        let digit = match byte {
+            b'%' => {
+                let high = (bytes.next()? as char).to_digit(16)?;
+                let low = (bytes.next()? as char).to_digit(16)?;
+                (high * 16 + low) as u8
+            }
+            other => other,
+        };
+        if !digit.is_ascii_digit() {
+            return None;
+        }
+        *digits.get_mut(len)? = digit;
+        len += 1;
+    }
+    percent(std::str::from_utf8(&digits[..len]).ok()?).ok()
+}
+
+fn config_window(payload: &str) -> Option<(u8, u8)> {
+    let mut resume = None;
+    let mut stop = None;
+    for field in payload.split(' ') {
+        let (key, value) = field.split_once('=')?;
+        let slot = match key {
+            "resume_percent" => &mut resume,
+            "stop_percent" => &mut stop,
+            _ => return None,
+        };
+        if slot.is_some() {
+            return None;
+        }
+        *slot = Some(form_percent(value)?);
+    }
+    let (resume, stop) = (resume?, stop?);
+    (resume < stop).then_some((resume, stop))
+}
+
+enum Controller {
+    Standard(threshold::Controller),
+    VerifiedInputSuspend(InputSuspend),
+}
+
+impl Controller {
+    fn discover(session: &str, event: &str) -> Result<Self> {
+        let state = env::var_os("PLUGIN_STATE_DIR")
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| Error::failure("Missing state directory"))?;
+        let state = Path::new(&state);
+        if event == "monitor" || threshold::has_evidence(state, session)? {
+            let (sys, firmware) = monitor::platform()?;
+            if let Some(controller) =
+                threshold::Controller::discover(&sys, state, &firmware, session)?
+            {
+                return Ok(Self::Standard(controller));
+            }
+            if event != "monitor" {
+                return Err(Error::failure(
+                    "The recorded charge threshold backend is unavailable",
+                ));
+            }
+        }
+        Ok(Self::VerifiedInputSuspend(InputSuspend::discover(session)?))
+    }
+
+    fn start(&mut self) -> Result<File> {
+        match self {
+            Self::Standard(controller) => controller.start(),
+            Self::VerifiedInputSuspend(controller) => controller.start(),
+        }
+    }
+
+    fn tick(&self, resume: u8, stop: u8, lease: &Lease) -> Result<WindowUpdate> {
+        match self {
+            Self::Standard(controller) => controller.tick(resume, stop, lease),
+            Self::VerifiedInputSuspend(controller) => controller.tick(resume, stop, lease),
+        }
+    }
+
+    fn inspect(&self) -> Result<&'static str> {
+        match self {
+            Self::Standard(controller) => controller.inspect(),
+            Self::VerifiedInputSuspend(controller) => controller.inspect(),
+        }
+    }
+
+    fn restore(&mut self) -> Result<()> {
+        match self {
+            Self::Standard(controller) => controller.restore(),
+            Self::VerifiedInputSuspend(controller) => controller.restore(),
+        }
+    }
+
+    fn cleanup(&self) -> Result<()> {
+        match self {
+            Self::Standard(controller) => controller.cleanup(),
+            Self::VerifiedInputSuspend(controller) => controller.cleanup(),
+        }
+    }
+}
+
 fn run() -> Result<()> {
     let session = env::var("INJECTOR_SESSION_ID").unwrap_or_default();
+    let event = env::var("INJECTOR_EVENT").unwrap_or_default();
     if !uuid(&session)
         || env::var("INJECTOR_SESSION_PROTOCOL").as_deref() != Ok("stdin-lease-v1")
         || env::var("INJECTOR_SESSION_LEASE_SECONDS").as_deref() != Ok("15")
-        || env::var("INJECTOR_EVENT").as_deref() != Ok("monitor")
+        || !matches!(event.as_str(), "monitor" | "disable" | "inspect")
     {
         return Err(Error::failure("Invalid charging monitor contract"));
     }
-    let resume =
+    if event == "inspect" {
+        let state = Controller::discover(&session, &event)
+            .and_then(|controller| controller.inspect())
+            .unwrap_or("UNREADABLE");
+        println!("INSPECTED {session} {state}");
+        return Ok(());
+    }
+    let mut controller = Controller::discover(&session, &event)?;
+    if event == "disable" {
+        controller.restore()?;
+        println!("RESTORED {session}");
+        return Ok(());
+    }
+    let mut resume =
         percent(&env::var("INJECTOR_INPUT_resume_percent").unwrap_or_else(|_| "75".into()))?;
-    let stop = percent(&env::var("INJECTOR_INPUT_stop_percent").unwrap_or_else(|_| "80".into()))?;
+    let mut stop =
+        percent(&env::var("INJECTOR_INPUT_stop_percent").unwrap_or_else(|_| "80".into()))?;
     if resume >= stop {
         return Err(Error::failure("Resume must be below stop"));
     }
     let mut lease = Lease::new()?;
-    let controller = Controller::discover(&session)?;
     eprintln!("Charging enforcement is unverified.");
     // A stalled reader cannot hold the monitor past its lease on an ACK write.
     let flags = unsafe { libc::fcntl(1, libc::F_GETFL) };
     if flags < 0 || unsafe { libc::fcntl(1, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
         return Err(io::Error::last_os_error().into());
     }
-    controller.start()?;
+    let _owner = controller.start()?;
     let mut out = io::stdout().lock();
     let result = (|| {
         let mut sequence = 1i32;
+        let mut config_sequence = Some(1i64);
         while let Some(frame) = lease.frame()? {
             if frame == format!("STOP {session}") {
                 break;
+            }
+            if let Some(config) = frame.strip_prefix("CONFIG ") {
+                let mut fields = config.splitn(3, ' ');
+                let Some(seq) = config_sequence else {
+                    return Err(Error::failure("Charging configuration sequence exhausted"));
+                };
+                if sequence == 1
+                    || fields.next() != Some(session.as_str())
+                    || fields.next() != Some(seq.to_string().as_str())
+                {
+                    return Err(Error::failure("Unexpected charging configuration frame"));
+                }
+                if !lease.current()? {
+                    break;
+                }
+                let mut reply = "REJECTED";
+                if let Some((new_resume, new_stop)) = config_window(fields.next().unwrap_or("")) {
+                    if let WindowUpdate::Applied = controller.tick(new_resume, new_stop, &lease)? {
+                        (resume, stop) = (new_resume, new_stop);
+                        reply = "CONFIGURED";
+                    }
+                }
+                if !lease.current()? {
+                    break;
+                }
+                writeln!(out, "{reply} {session} {seq}")?;
+                out.flush()?;
+                config_sequence = seq.checked_add(1);
+                continue;
             }
             if frame != format!("HEARTBEAT {session} {sequence}") {
                 return Err(Error::failure("Unexpected charging session frame"));
@@ -68,7 +220,7 @@ fn run() -> Result<()> {
                 break;
             }
             lease.renew()?;
-            controller.tick(resume, stop, &lease)?;
+            controller.tick(resume, stop, &lease)?.require_applied()?;
             if !lease.current()? {
                 break;
             }

@@ -1,9 +1,9 @@
-# Battery charge limit source notice
+# battery-charge-limit source notice
 
-The manifest, shell scripts and host tests come from `SmallThingz/Injector`,
-`plugins/battery-charge-limit`.
+Sources and manifest originate in SmallThingz/Injector commit `2849d9d99f5c4b901fe209adeaacb8ec248ab21d`.
+Exact source mapping and retained worker provenance are in `../../native-candidates.json`.
+The adjacent native/ directory contains the unmodified Rust build inputs.
 
-The packaged native-charge monitor is built from SmallThingz/Injector plugins/native-charge.
 Its locked Rust libc bindings (0.2.191) are used under the MIT license:
 Copyright (c) The Rust Project Developers
 

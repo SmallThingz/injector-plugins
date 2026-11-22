@@ -1,0 +1,153 @@
+{
+  "format": 1,
+  "upstream_repository": "https://github.com/SmallThingz/Injector",
+  "upstream_commit": "2849d9d99f5c4b901fe209adeaacb8ec248ab21d",
+  "canonical_parent": "f6a95a3a0cee8f19061b7a538891f07000e73b13",
+  "publication": false,
+  "packages": {
+    "battery-charge-limit": {
+      "version": "0.1.0",
+      "manifest_path": "plugins/battery-charge-limit/plugin.json",
+      "proposed_tag": "plugins-20261123-native-010-1",
+      "source_files": {
+        "plugins/battery-charge-limit/plugin.json": {
+          "upstream_path": "plugins/native-charge/plugin.json",
+          "sha256": "0f937c79b422aeb438693bf40001c43a807999b291be505984ce02270c3fb058"
+        },
+        "plugins/battery-charge-limit/native/Cargo.lock": {
+          "upstream_path": "plugins/native-charge/Cargo.lock",
+          "sha256": "681082808a262b30486911bb87d9d707330df0cbaa0701c16e125ae09d2ed871"
+        },
+        "plugins/battery-charge-limit/native/Cargo.toml": {
+          "upstream_path": "plugins/native-charge/Cargo.toml",
+          "sha256": "191be48d55aee47e003df4f6c25dea898231acaec85b37ea2fa516d073a09ff0"
+        },
+        "plugins/battery-charge-limit/native/build-android.sh": {
+          "upstream_path": "plugins/native-charge/build-android.sh",
+          "sha256": "736fa1d2b560486caca0be62a54a94cad5bb7e8a397cc31426c62c0751a8f2da"
+        },
+        "plugins/battery-charge-limit/native/src/lease.rs": {
+          "upstream_path": "plugins/native-charge/src/lease.rs",
+          "sha256": "7ac8af7ebf4bbd346df9640d7ae16c958a8fe2162eb83ecebc20dba3fc66b867"
+        },
+        "plugins/battery-charge-limit/native/src/main.rs": {
+          "upstream_path": "plugins/native-charge/src/main.rs",
+          "sha256": "53a282cf20a02ccd1f5c46b5d59ea4da28bc8e79a6a72cad686eaefded830774"
+        },
+        "plugins/battery-charge-limit/native/src/monitor.rs": {
+          "upstream_path": "plugins/native-charge/src/monitor.rs",
+          "sha256": "578a792b536b10b6596ad581629cc3496631dcedac884ed8a89388cc1a554a57"
+        },
+        "plugins/battery-charge-limit/native/src/threshold.rs": {
+          "upstream_path": "plugins/native-charge/src/threshold.rs",
+          "sha256": "f9cd7b9d5323c4754d3c004d59fa80a08399cf2839bc40588bdb2cd476679b9f"
+        },
+        "plugins/battery-charge-limit/native/.gitignore": {
+          "upstream_path": "plugins/native-charge/.gitignore",
+          "sha256": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368"
+        }
+      },
+      "worker": {
+        "path": "plugins/battery-charge-limit/native-charge",
+        "bytes": 348616,
+        "sha256": "f2fc24c7b3c88d04a4cc8e446f1dc95984296d6d8b1f8046501f39b39e84a3a8",
+        "built_from_injector_commit": "2be0d3852bfa47acb68cb20df8715816bb4aec5d",
+        "build_inputs_match_current": true,
+        "abi": "arm64-v8a",
+        "android_api": 28,
+        "interpreter": "/system/bin/linker64",
+        "toolchain": "rustc 1.99.1, Cargo 1.99.1, Android NDK 29.0.14206865",
+        "rebuilt_for_this_candidate": false
+      },
+      "members": [
+        "NOTICE.md",
+        "native-charge",
+        "plugin.json"
+      ],
+      "qualification": "Candidate packaging only; no device validation, installation or publication performed in this lane."
+    },
+    "cpu-control": {
+      "version": "0.1.0",
+      "manifest_path": "plugins/cpu-control/plugin.json",
+      "proposed_tag": "plugins-20261123-native-010-1",
+      "source_files": {
+        "plugins/cpu-control/plugin.json": {
+          "upstream_path": "plugins/cpu-control/plugin.json",
+          "sha256": "13b341f02ee4989307386ee458c54e21469fdef5a95b3c8eba76ea40fc209218"
+        },
+        "plugins/cpu-control/native/Cargo.lock": {
+          "upstream_path": "plugins/native-power/Cargo.lock",
+          "sha256": "cf1a38a30fa27ddb096fe431760e4334341f754459ed620df32263c791717793"
+        },
+        "plugins/cpu-control/native/Cargo.toml": {
+          "upstream_path": "plugins/native-power/Cargo.toml",
+          "sha256": "73d11e7ec24d8dc48ef5d311fa91a4049386b4d087979934e11704b15901ea82"
+        },
+        "plugins/cpu-control/native/build-android.sh": {
+          "upstream_path": "plugins/native-power/build-android.sh",
+          "sha256": "4d02d3ad30d7215b938ee4003eff55ee8efc02454da4d9d6890e501614674467"
+        },
+        "plugins/cpu-control/native/src/main.rs": {
+          "upstream_path": "plugins/native-power/src/main.rs",
+          "sha256": "2be81e349f7dd4d5b11f334840d6e64a7f61ee8b87a3667f97ed01e3f81fc21c"
+        },
+        "plugins/cpu-control/native/src/policy.rs": {
+          "upstream_path": "plugins/native-power/src/policy.rs",
+          "sha256": "3ec65bb94f243b7823ce705210f68fd79b5bdae5578807a5dc56a3819aae5275"
+        },
+        "plugins/cpu-control/native/src/transaction.rs": {
+          "upstream_path": "plugins/native-power/src/transaction.rs",
+          "sha256": "085ac719912f22aa16dbfabdaafac2fe2832ad481d7f5027cd9c5f8884de2f5c"
+        },
+        "plugins/cpu-control/native/.gitignore": {
+          "upstream_path": "plugins/native-power/.gitignore",
+          "sha256": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368"
+        }
+      },
+      "worker": {
+        "path": "plugins/cpu-control/native-power",
+        "bytes": 365248,
+        "sha256": "579db2c98c61ca1524256a48902d4ea73e71f0d804045177ff1fb8a85cf012f7",
+        "built_from_injector_commit": "8c8c849f62900e97b3844cf8f0e3f7e4c7142dcb",
+        "build_inputs_match_current": true,
+        "abi": "arm64-v8a",
+        "android_api": 28,
+        "interpreter": "/system/bin/linker64",
+        "toolchain": "rustc 1.99.1, Cargo 1.99.1, Android NDK 29.0.14206865",
+        "rebuilt_for_this_candidate": false
+      },
+      "members": [
+        "NOTICE.md",
+        "native-power",
+        "plugin.json"
+      ],
+      "qualification": "Candidate packaging only; no device validation, installation or publication performed in this lane."
+    },
+    "caffeine": {
+      "version": "0.1.0",
+      "manifest_path": "plugins/caffeine/plugin.json",
+      "proposed_tag": "plugins-20261123-caffeine-010-1",
+      "source_files": {
+        "plugins/caffeine/plugin.json": {
+          "upstream_path": "plugins/caffeine/plugin.json",
+          "sha256": "ba6248d8811927f3fa054f1eb5f2ffdd57d47c992a01c631dd115e541675a09b"
+        },
+        "plugins/caffeine/acquire.json": {
+          "upstream_path": "plugins/caffeine/acquire.json",
+          "sha256": "08d0a074474dccf7274ac108a8cd47c8ef8b8bbf2063119140bb35ebdbfea763"
+        },
+        "plugins/caffeine/release.json": {
+          "upstream_path": "plugins/caffeine/release.json",
+          "sha256": "6f241de0a70a0d9dbd0253d257f67583d28961cd52a81e15ca68deb70606ac35"
+        }
+      },
+      "members": [
+        "acquire.json",
+        "plugin.json",
+        "release.json"
+      ],
+      "runtime_note": "Native Android capability in Injector; no executable or shell wrapper. Runtime implementation is not part of the plugin archive.",
+      "qualification": "Candidate packaging only; no device validation, installation or publication performed in this lane."
+    }
+  }
+}

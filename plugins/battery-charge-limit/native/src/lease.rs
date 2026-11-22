@@ -112,6 +112,7 @@ impl Lease {
     }
     pub fn frame(&mut self) -> Result<Option<String>> {
         let mut frame = String::new();
+        let mut config = false;
         loop {
             if !self.current()? {
                 return Err(Error(4, "Charging session lease expired.".into()));
@@ -151,12 +152,19 @@ impl Lease {
                 if byte == b'\n' {
                     return Ok(Some(frame));
                 }
-                if frame.len() == 63
-                    || !(byte.is_ascii_alphanumeric() || byte == b' ' || byte == b'-')
-                {
+                let valid = if config {
+                    frame.len() < 256 && (b' '..=b'~').contains(&byte)
+                } else {
+                    frame.len() < 63
+                        && (byte.is_ascii_alphanumeric() || byte == b' ' || byte == b'-')
+                };
+                if !valid {
                     return Err(Error::failure("Invalid charging session frame"));
                 }
                 frame.push(byte as char);
+                if frame.len() == "CONFIG ".len() {
+                    config = frame == "CONFIG ";
+                }
             }
         }
     }

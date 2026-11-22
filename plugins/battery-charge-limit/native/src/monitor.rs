@@ -5,7 +5,7 @@ use std::{
     io::{self, Read, Write},
     os::{
         fd::AsRawFd,
-        unix::fs::{OpenOptionsExt, PermissionsExt},
+        unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     },
     path::{Path, PathBuf},
 };
@@ -16,7 +16,7 @@ impl Error {
     pub fn failure(msg: &str) -> Self {
         Self(1, msg.into())
     }
-    fn conflict(msg: &str) -> Self {
+    pub(super) fn conflict(msg: &str) -> Self {
         Self(3, msg.into())
     }
 }
@@ -29,34 +29,71 @@ impl From<io::Error> for Error {
 const BATTERY: &str="platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:qcom,battery_charger/power_supply/battery";
 
 #[cfg(target_os = "android")]
-fn platform() -> Result<PathBuf> {
+pub(super) fn platform() -> Result<(PathBuf, String)> {
     unsafe extern "C" {
-        fn __system_property_get(name: *const libc::c_char, value: *mut libc::c_char) -> i32;
+        fn __system_property_find(name: *const libc::c_char) -> *const libc::c_void;
+        fn __system_property_read_callback(
+            property: *const libc::c_void,
+            callback: unsafe extern "C" fn(
+                *mut libc::c_void,
+                *const libc::c_char,
+                *const libc::c_char,
+                u32,
+            ),
+            cookie: *mut libc::c_void,
+        );
     }
-    let mut buf = [0 as libc::c_char; 92];
-    let n = unsafe { __system_property_get(c"ro.build.fingerprint".as_ptr(), buf.as_mut_ptr()) };
-    if n <= 0 || unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }.to_bytes() != FIRMWARE.as_bytes()
-    {
-        return Err(Error::failure("Unsupported charging firmware"));
+    unsafe extern "C" fn fingerprint(
+        cookie: *mut libc::c_void,
+        _: *const libc::c_char,
+        value: *const libc::c_char,
+        _: u32,
+    ) {
+        if let Ok(value) = unsafe { std::ffi::CStr::from_ptr(value) }.to_str() {
+            if valid_fingerprint(value) {
+                *unsafe { &mut *cookie.cast::<Option<String>>() } = Some(value.into());
+            }
+        }
     }
-    Ok(PathBuf::from("/sys"))
+    let property = unsafe { __system_property_find(c"ro.build.fingerprint".as_ptr()) };
+    if property.is_null() {
+        return Err(Error::failure("Cannot identify charging firmware"));
+    }
+    let mut value = None;
+    unsafe {
+        __system_property_read_callback(
+            property,
+            fingerprint,
+            (&mut value as *mut Option<String>).cast(),
+        );
+    }
+    Ok((
+        PathBuf::from("/sys"),
+        value.ok_or_else(|| Error::failure("Cannot identify charging firmware"))?,
+    ))
 }
 
 #[cfg(not(target_os = "android"))]
-fn platform() -> Result<PathBuf> {
+pub(super) fn platform() -> Result<(PathBuf, String)> {
     let root = env::var_os("CHARGE_TEST_ROOT")
         .ok_or_else(|| Error::failure("Host requires fixture directory"))?;
     let root = fs::canonicalize(root)?;
     if root == Path::new("/") {
         return Err(Error::failure("Invalid fixture root"));
     }
-    if fs::read_to_string(root.join("fingerprint"))?.trim_end() != FIRMWARE {
-        return Err(Error::failure("Unsupported charging firmware"));
+    let fingerprint = read(&root.join("fingerprint"))?;
+    let fingerprint = fingerprint.trim_end_matches('\n');
+    if !valid_fingerprint(fingerprint) {
+        return Err(Error::failure("Cannot identify charging firmware"));
     }
-    Ok(root.join("sys"))
+    Ok((root.join("sys"), fingerprint.into()))
 }
 
-fn regular(path: &Path, write: bool) -> Result<File> {
+fn valid_fingerprint(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
+}
+
+pub(super) fn regular(path: &Path, write: bool) -> Result<File> {
     let f = OpenOptions::new()
         .read(!write)
         .write(write)
@@ -67,15 +104,18 @@ fn regular(path: &Path, write: bool) -> Result<File> {
     }
     Ok(f)
 }
-fn read(path: &Path) -> Result<String> {
+pub(super) fn read(path: &Path) -> Result<String> {
+    read_file(&regular(path, false)?)
+}
+pub(super) fn read_file(file: &File) -> Result<String> {
     let mut text = String::new();
-    regular(path, false)?.take(4097).read_to_string(&mut text)?;
+    file.take(4097).read_to_string(&mut text)?;
     if text.len() > 4096 {
         return Err(Error::failure("Oversize charging state"));
     }
     Ok(text)
 }
-fn exists(path: &Path) -> Result<bool> {
+pub(super) fn exists(path: &Path) -> Result<bool> {
     match path.symlink_metadata() {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
@@ -86,6 +126,21 @@ struct Receipt {
     confirmed: u8,
     pending: Option<u8>,
 }
+
+pub enum WindowUpdate {
+    Applied,
+    Rejected(Error),
+}
+
+impl WindowUpdate {
+    pub fn require_applied(self) -> Result<()> {
+        match self {
+            Self::Applied => Ok(()),
+            Self::Rejected(error) => Err(error),
+        }
+    }
+}
+
 pub struct Controller {
     state: PathBuf,
     battery_link: PathBuf,
@@ -99,7 +154,12 @@ pub struct Controller {
 
 impl Controller {
     pub fn discover(session: &str) -> Result<Self> {
-        let sys = platform()?;
+        let (sys, firmware) = platform()?;
+        if firmware != FIRMWARE {
+            return Err(Error::failure(
+                "This device has no supported charging control backend",
+            ));
+        }
         let state = PathBuf::from(
             env::var_os("PLUGIN_STATE_DIR")
                 .ok_or_else(|| Error::failure("Missing state directory"))?,
@@ -123,11 +183,8 @@ impl Controller {
         let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id")?
             .trim_end()
             .to_owned();
-        let launch = fs::read_to_string("/proc/sys/kernel/random/uuid")?
-            .trim_end()
-            .to_owned();
-        if !uuid(&boot) || !uuid(&launch) {
-            return Err(Error::failure("Invalid boot or launch identity"));
+        if !uuid(&boot) {
+            return Err(Error::failure("Invalid boot identity"));
         }
         Ok(Self {
             state,
@@ -137,7 +194,7 @@ impl Controller {
             controller,
             boot,
             session: session.into(),
-            launch,
+            launch: String::new(),
         })
     }
     fn lock(&self) -> Result<File> {
@@ -156,6 +213,11 @@ impl Controller {
         }
         if exists(&self.state.join("threshold-state"))? {
             return Err(Error::failure("A threshold session must be restored first"));
+        }
+        if exists(&self.state.join("native-threshold-state"))? {
+            return Err(Error::failure(
+                "A standard threshold session must be restored first",
+            ));
         }
         Ok(lock)
     }
@@ -179,6 +241,12 @@ impl Controller {
     }
     fn journal(&self) -> PathBuf {
         self.state.join("input-suspend-state")
+    }
+    fn restored(&self) -> PathBuf {
+        self.state.join("input-suspend-restored")
+    }
+    fn owner(&self) -> PathBuf {
+        self.state.join("input-suspend-owner")
     }
     fn save(&self, r: &Receipt) -> Result<()> {
         let temp = self.state.join("input-suspend-state.new");
@@ -207,16 +275,19 @@ impl Controller {
         fs::rename(temp, self.journal())?;
         Ok(())
     }
-    fn load(&self) -> Result<Receipt> {
-        let text = read(&self.journal())
-            .map_err(|_| Error::conflict("Session journal missing or unreadable"))?;
+    fn read_receipt(&self, path: &Path) -> Result<(Receipt, String)> {
+        let text =
+            read(path).map_err(|_| Error::conflict("Session journal missing or unreadable"))?;
+        self.parse_receipt(&text)
+    }
+    fn parse_receipt(&self, text: &str) -> Result<(Receipt, String)> {
         let lines: Vec<_> = text.lines().collect();
         if lines.len() != 9
             || lines[..3] != ["1", FIRMWARE, &self.boot]
             || Path::new(lines[3]) != self.battery
             || Path::new(lines[4]) != self.controller
             || lines[5] != self.session
-            || lines[8] != self.launch
+            || !uuid(lines[8])
         {
             return Err(Error::conflict("Charging journal identity changed"));
         }
@@ -227,17 +298,76 @@ impl Controller {
             ("1", "0") => (1, Some(0)),
             _ => return Err(Error::conflict("Invalid charging write receipt")),
         };
-        let mut r = Receipt { confirmed, pending };
-        self.check(&r)?;
-        if r.pending.take().is_some() {
-            self.save(&r)?;
+        let receipt = Receipt { confirmed, pending };
+        Ok((receipt, lines[8].to_owned()))
+    }
+
+    pub fn inspect(&self) -> Result<&'static str> {
+        let owned = exists(&self.journal())?;
+        let path = if owned {
+            self.journal()
+        } else {
+            self.restored()
+        };
+        let evidence = regular(&path, false)?;
+        let (receipt, launch) = self.parse_receipt(&read_file(&evidence)?)?;
+        if receipt.pending.is_some() || (!owned && receipt.confirmed != 0) {
+            return Ok("UNREADABLE");
         }
-        Ok(r)
+        if self.battery_link.canonicalize()? != self.battery {
+            return Ok("UNREADABLE");
+        }
+        let live = self.live()?;
+        let status = if live != receipt.confirmed {
+            "EXTERNALLY_CHANGED"
+        } else if !owned {
+            "RESTORED"
+        } else if self.owner_alive(&launch)? {
+            "ACTIVE"
+        } else {
+            "UNREADABLE"
+        };
+
+        // Writers publish records by rename. Holding the original inode open
+        // lets us detect even a round trip back to the same receipt contents.
+        let original = evidence.metadata()?;
+        let current = fs::symlink_metadata(path)?;
+        if (original.dev(), original.ino()) != (current.dev(), current.ino())
+            || (!owned && exists(&self.journal())?)
+            || exists(&self.state.join("threshold-state"))?
+            || exists(&self.state.join("native-threshold-state"))?
+        {
+            return Ok("UNREADABLE");
+        }
+        Ok(status)
+    }
+
+    fn owner_alive(&self, launch: &str) -> Result<bool> {
+        let owner = regular(&self.owner(), false)?;
+        let mut marker = String::new();
+        (&owner).take(37).read_to_string(&mut marker)?;
+        // Only an exclusive lock conflicts with this shared probe. The marker
+        // binds that lock to the launch recorded by this session's journal.
+        Ok(marker == launch
+            && unsafe { libc::flock(owner.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0
+            && io::Error::last_os_error().kind() == io::ErrorKind::WouldBlock)
+    }
+
+    fn load(&self) -> Result<Receipt> {
+        let (mut receipt, launch) = self.read_receipt(&self.journal())?;
+        self.check(&receipt)?;
+        if launch != self.launch {
+            return Err(Error::conflict("Charging launch identity changed"));
+        }
+        if receipt.pending.take().is_some() {
+            self.save(&receipt)?;
+        }
+        Ok(receipt)
     }
     fn writable(&self) -> Result<bool> {
         Ok(self.node.symlink_metadata()?.permissions().mode() & 0o200 != 0)
     }
-    pub fn start(&self) -> Result<()> {
+    pub fn start(&mut self) -> Result<File> {
         let _lock = self.lock()?;
         if exists(&self.journal())? {
             return Err(Error::failure(
@@ -247,23 +377,49 @@ impl Controller {
         if self.live()? != 0 || !self.writable()? {
             return Err(Error::failure("Input suspend already active or read-only"));
         }
+        self.launch = fs::read_to_string("/proc/sys/kernel/random/uuid")?
+            .trim_end()
+            .to_owned();
+        if !uuid(&self.launch) {
+            return Err(Error::failure("Invalid launch identity"));
+        }
+        // Each launch gets its own lock inode. An inspector probing an old
+        // marker cannot contend with startup of a new worker.
+        let temp = self.state.join("input-suspend-owner.new");
+        if exists(&temp)? {
+            fs::remove_file(&temp)?;
+        }
+        let mut owner = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temp)?;
+        if unsafe { libc::flock(owner.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err(Error::failure("Charging owner lock unavailable or busy"));
+        }
+        owner.write_all(self.launch.as_bytes())?;
+        fs::rename(temp, self.owner())?;
         self.save(&Receipt {
             confirmed: 0,
             pending: None,
-        })
+        })?;
+        Ok(owner)
     }
-    fn change(&self, r: &mut Receipt, target: u8, lease: Option<&Lease>) -> Result<()> {
+    fn change(&self, r: &mut Receipt, target: u8, lease: Option<&Lease>) -> Result<WindowUpdate> {
         self.check(r)?;
         if r.confirmed == target {
-            return Ok(());
+            return Ok(WindowUpdate::Applied);
         }
         r.pending = Some(target);
         self.save(r)?;
         self.check(r)?;
         if !self.writable()? {
+            self.check(r)?;
             r.pending = None;
             self.save(r)?;
-            return Err(Error::failure("Input suspend became read-only"));
+            return Ok(WindowUpdate::Rejected(Error::failure(
+                "Input suspend became read-only",
+            )));
         }
         let node = regular(&self.node, true);
         #[cfg(not(target_os = "android"))]
@@ -293,37 +449,72 @@ impl Controller {
             r.confirmed = target;
             r.pending = None;
             self.save(r)
+                .map_err(|_| Error::conflict("Cannot confirm charging write; journal retained"))?;
+            Ok(WindowUpdate::Applied)
         } else if live == r.confirmed {
             r.pending = None;
             self.save(r)?;
-            Err(Error::failure("Driver rejected input suspend"))
+            Ok(WindowUpdate::Rejected(Error::failure(
+                "Driver rejected input suspend",
+            )))
         } else {
             Err(Error::conflict(
                 "Unknown input-suspend outcome; journal retained",
             ))
         }
     }
-    pub fn tick(&self, resume: u8, stop: u8, lease: &Lease) -> Result<()> {
+    pub fn tick(&self, resume: u8, stop: u8, lease: &Lease) -> Result<WindowUpdate> {
         let _lock = self.lock()?;
         let mut r = self.load()?;
         if self.battery_link.canonicalize().ok().as_ref() != Some(&self.battery) {
             return Err(Error::conflict("Battery controller changed"));
         }
-        let cap = percent(read(&self.battery.join("capacity"))?.trim_end_matches('\n'))?;
+        let cap = match read(&self.battery.join("capacity"))
+            .and_then(|value| percent(value.trim_end_matches('\n')))
+        {
+            Ok(cap) => cap,
+            Err(error) => return Ok(WindowUpdate::Rejected(error)),
+        };
         if cap >= stop {
-            self.change(&mut r, 1, Some(lease))?;
+            self.change(&mut r, 1, Some(lease))
         } else if cap <= resume {
-            self.change(&mut r, 0, Some(lease))?;
+            self.change(&mut r, 0, Some(lease))
+        } else {
+            Ok(WindowUpdate::Applied)
         }
+    }
+    pub fn restore(&mut self) -> Result<()> {
+        let _lock = self.lock()?;
+        let journal = self.journal();
+        let restored = self.restored();
+        if !exists(&journal)? {
+            let (receipt, _) = self.read_receipt(&restored)?;
+            self.check(&receipt)?;
+            if receipt.confirmed != 0 || receipt.pending.is_some() {
+                return Err(Error::conflict("Invalid charging restoration receipt"));
+            }
+            return Ok(());
+        }
+
+        let (mut receipt, launch) = self.read_receipt(&journal)?;
+        self.check(&receipt)?;
+        self.launch = launch;
+        if receipt.pending.take().is_some() {
+            self.save(&receipt)?;
+        }
+        self.restore_receipt(&mut receipt)
+    }
+
+    fn restore_receipt(&self, receipt: &mut Receipt) -> Result<()> {
+        self.change(receipt, 0, None)?.require_applied()?;
+        self.check(receipt)?;
+        fs::rename(self.journal(), self.restored())?;
         Ok(())
     }
+
     pub fn cleanup(&self) -> Result<()> {
         let _lock = self.lock()?;
-        let mut r = self.load()?;
-        self.change(&mut r, 0, None)?;
-        self.check(&r)?;
-        fs::rename(self.journal(), self.state.join("input-suspend-restored"))?;
-        Ok(())
+        self.restore_receipt(&mut self.load()?)
     }
 }
 

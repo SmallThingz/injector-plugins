@@ -1,7 +1,7 @@
 {
   "id": "caffeine",
   "name": "Caffeine",
-  "version": "0.1.3",
+  "version": "0.1.0",
   "author": "SmallThingz",
   "homepage": "https://github.com/SmallThingz/Injector",
   "description": "Keep the screen awake across apps.",
@@ -23,7 +23,7 @@
   "ui": {
     "layout": "accordion",
     "presentation": {
-      "icon": "plugin",
+      "icon": "coffee",
       "headline": "{duration}"
     },
     "inputs": [

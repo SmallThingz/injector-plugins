@@ -1,18 +1,20 @@
 {
   "id": "battery-charge-limit",
   "name": "Battery charge limit",
-  "version": "0.1",
-  "description": "Configure a charge window on supported devices. Charging enforcement depends on the battery driver.",
+  "version": "0.1.0",
+  "description": "Set a charge window on supported battery controllers.",
   "backend": "root",
-  "runtime": "shell",
+  "runtime": "binary",
   "hooks": {
-    "enable": "hook.sh",
-    "run": "hook.sh",
-    "disable": "hook.sh"
+    "enable": "native-charge",
+    "run": "native-charge",
+    "configure": "native-charge",
+    "inspect": "native-charge",
+    "disable": "native-charge"
   },
   "session": {
     "protocol": "stdin-lease-v1",
-    "hook": "hook.sh"
+    "hook": "native-charge"
   },
   "quickSettings": {
     "icon": "battery",
@@ -29,7 +31,7 @@
     "inputs": [
       {
         "id": "stop_percent",
-        "label": "Stop at or above",
+        "label": "Stop threshold",
         "group": "charging",
         "type": "slider",
         "min": 0,
@@ -39,7 +41,7 @@
       },
       {
         "id": "resume_percent",
-        "label": "Resume at or below",
+        "label": "Resume threshold",
         "group": "charging",
         "type": "slider",
         "min": 0,
@@ -60,7 +62,7 @@
     ],
     "presentation": {
       "icon": "battery",
-      "headline": "{resume_percent}–{stop_percent}%",
+      "headline": "{resume_percent}\u2013{stop_percent}%",
       "description": "Charging enforcement depends on the battery driver.",
       "sliderUnits": {
         "stop_percent": "%",

@@ -1,4 +1,6 @@
+mod policy;
 mod transaction;
+use policy::{policies, PolicyKey};
 use std::{
     collections::BTreeMap,
     env,
@@ -15,21 +17,23 @@ extern "C" {
     fn access(path: *const std::ffi::c_char, mode: i32) -> i32;
 }
 
-const POLICIES: [(&str, &str); 3] = [
-    ("policy0", "0 1 2 3"),
-    ("policy4", "4 5 6"),
-    ("policy7", "7"),
-];
 const GOV: &str = "scaling_governor";
 const MAX: &str = "scaling_max_freq";
-type Journal = BTreeMap<(String, String), (String, String)>;
+const MAX_INPUT_BYTES: usize = 65536;
+type Journal = BTreeMap<(String, String), Saved>;
+
+struct Saved {
+    policy: PolicyKey,
+    baseline: String,
+    applied: String,
+}
 
 fn read_raw(path: &Path) -> io::Result<String> {
     let mut text = String::new();
     fs::File::open(path)?
-        .take(65537)
+        .take((MAX_INPUT_BYTES + 1) as u64)
         .read_to_string(&mut text)?;
-    if text.len() > 65536 {
+    if text.len() > MAX_INPUT_BYTES {
         return Err(io::Error::other("CPU probe input too large"));
     }
     Ok(text)
@@ -65,7 +69,7 @@ fn writable(p: &Path) -> bool {
     m.is_file() && m.permissions().mode() & 0o200 != 0 && unsafe { access(c.as_ptr(), 2) == 0 }
 }
 
-fn journal(state: &Path) -> Result<Journal, String> {
+fn journal(state: &Path) -> Result<Option<Journal>, String> {
     let invalid = "Invalid CPU frequency restore journal.";
     match fs::symlink_metadata(state.join("pending")) {
         Ok(_) => return Err("CPU frequency recovery is pending.".into()),
@@ -76,7 +80,7 @@ fn journal(state: &Path) -> Result<Journal, String> {
     let mut entries = Journal::new();
     match fs::symlink_metadata(&path) {
         Ok(m) if m.is_file() => (),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(entries),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         _ => return Err(invalid.into()),
     }
     for line in read_raw(&path).map_err(|_| invalid)?.lines() {
@@ -84,34 +88,37 @@ fn journal(state: &Path) -> Result<Journal, String> {
         let [p, n, a, b] = fields.as_slice() else {
             return Err(invalid.into());
         };
-        if !POLICIES.iter().any(|(name, _)| name == p)
-            || !match *n {
-                GOV => token(a) && token(b),
-                MAX => digits(a) && digits(b),
-                _ => false,
-            }
-            || entries
-                .insert(
-                    (p.to_string(), n.to_string()),
-                    (a.to_string(), b.to_string()),
-                )
-                .is_some()
+        let policy = PolicyKey::parse(p).ok_or(invalid)?;
+        if !match *n {
+            GOV => token(a) && token(b),
+            MAX => freq(a).is_some() && freq(b).is_some(),
+            _ => false,
+        } || entries
+            .insert(
+                (policy.id().to_string(), n.to_string()),
+                Saved {
+                    policy,
+                    baseline: a.to_string(),
+                    applied: b.to_string(),
+                },
+            )
+            .is_some()
         {
             return Err(invalid.into());
         }
     }
-    Ok(entries)
+    Ok(Some(entries))
 }
 
-fn original<'a>(saved: Option<&'a (String, String)>, live: &'a str) -> Option<&'a str> {
+fn original<'a>(saved: Option<&'a Saved>, live: &'a str) -> Option<&'a str> {
     match saved {
         None => Some(live),
-        Some((a, b)) if b == live => Some(a),
+        Some(saved) if saved.applied == live => Some(&saved.baseline),
         _ => None,
     }
 }
 
-fn governors(dir: &Path, saved: Option<&(String, String)>) -> Option<String> {
+fn governors(dir: &Path, saved: Option<&Saved>) -> Option<String> {
     if !writable(&dir.join(GOV)) {
         return None;
     }
@@ -135,7 +142,7 @@ fn governors(dir: &Path, saved: Option<&(String, String)>) -> Option<String> {
     Some(choices.join(","))
 }
 
-fn frequencies(dir: &Path, saved: Option<&(String, String)>) -> Option<String> {
+fn frequencies(dir: &Path, saved: Option<&Saved>, selectable: bool) -> Option<String> {
     let get = |name| read(&dir.join(name)).ok();
     let low = freq(&get("scaling_min_freq")?)?;
     let live = get(MAX)?;
@@ -147,7 +154,7 @@ fn frequencies(dir: &Path, saved: Option<&(String, String)>) -> Option<String> {
     }
     let choices = (|| {
         let high = freq(original(saved, &live)?)?.min(hardware);
-        if !(low..=hardware).contains(&current) || !writable(&dir.join(MAX)) {
+        if !selectable || !(low..=hardware).contains(&current) || !writable(&dir.join(MAX)) {
             return None;
         }
         let table = get("scaling_available_frequencies")?;
@@ -168,22 +175,27 @@ fn frequencies(dir: &Path, saved: Option<&(String, String)>) -> Option<String> {
 }
 
 fn probe(root: &Path, state: &Path) -> Result<String, String> {
-    let saved = journal(state)?;
+    let saved = journal(state)?.unwrap_or_default();
     let mut rows = Vec::new();
-    for (name, cpus) in POLICIES {
-        let dir = root.join(name);
-        let Ok(membership) = read(&dir.join("related_cpus")) else {
-            continue;
+    for (name, policy) in policies(root).map_err(|err| err.to_string())? {
+        let dir = root.join(&name);
+        let saved_field = |node: &str| saved.get(&(name.clone(), node.into()));
+        let selectable = |node| {
+            !policy.online.is_empty()
+                && saved_field(node).is_none_or(|entry| entry.policy.matches(&policy))
         };
-        if !membership.split_ascii_whitespace().eq(cpus.split(' ')) {
-            continue;
-        }
-        let gov =
-            governors(&dir, saved.get(&(name.to_owned(), GOV.to_owned()))).unwrap_or_default();
-        let limits = frequencies(&dir, saved.get(&(name.to_owned(), MAX.to_owned())))
+        let gov = if selectable(GOV) {
+            governors(&dir, saved_field(GOV)).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let limits = frequencies(&dir, saved_field(MAX), selectable(MAX))
             .unwrap_or_else(|| "\"maxKHz\":[],\"minKHz\":null,\"currentMaxKHz\":null".into());
+        let driver = &policy.identity.driver;
+        let cpus = policy.identity.cpus.replace(' ', ",");
+        let online = policy.online.replace(' ', ",");
         rows.push(format!(
-            "{{\"id\":\"{name}\",\"governors\":[{gov}],{limits}}}"
+            "{{\"id\":\"{name}\",\"cpus\":[{cpus}],\"onlineCpus\":[{online}],\"driver\":\"{driver}\",\"governors\":[{gov}],{limits}}}"
         ));
     }
     Ok(format!(
@@ -192,9 +204,25 @@ fn probe(root: &Path, state: &Path) -> Result<String, String> {
     ))
 }
 
-fn run() -> Result<String, String> {
+fn inspect_challenge() -> Result<String, Box<dyn std::error::Error>> {
+    let challenge = env::var("INJECTOR_INSPECT_ID")?;
+    if challenge.len() != 36
+        || !challenge.bytes().enumerate().all(|(index, c)| match index {
+            8 | 13 | 18 | 23 => c == b'-',
+            _ => c.is_ascii_digit() || (b'a'..=b'f').contains(&c),
+        })
+    {
+        return Err("Invalid CPU inspection challenge.".into());
+    }
+    Ok(challenge)
+}
+
+fn run() -> Result<String, Box<dyn std::error::Error>> {
     let event = env::var("INJECTOR_EVENT").map_err(|_| "Missing hook event.")?;
-    if !matches!(event.as_str(), "enable" | "run" | "disable" | "probe") {
+    if !matches!(
+        event.as_str(),
+        "enable" | "configure" | "run" | "disable" | "probe" | "inspect"
+    ) {
         return Err("Unknown hook event.".into());
     }
     if unsafe { getuid() } != 0 {
@@ -203,7 +231,7 @@ fn run() -> Result<String, String> {
     let state = env::var_os("PLUGIN_STATE_DIR")
         .filter(|s| !s.is_empty())
         .ok_or("Missing plugin state directory.")?;
-    let boot = read(Path::new("/proc/sys/kernel/random/boot_id")).map_err(|e| e.to_string())?;
+    let boot = read(Path::new("/proc/sys/kernel/random/boot_id"))?;
     if boot.is_empty()
         || !boot
             .bytes()
@@ -213,10 +241,14 @@ fn run() -> Result<String, String> {
     }
     let root = Path::new("/sys/devices/system/cpu/cpufreq");
     let state = Path::new(&state).join(format!("cpu-{boot}"));
-    if event == "probe" {
-        probe(root, &state)
-    } else {
-        transaction::apply(root, &state, &event).map_err(|e| e.to_string())
+    match event.as_str() {
+        "probe" => probe(root, &state).map_err(Into::into),
+        "inspect" => {
+            let challenge = inspect_challenge()?;
+            transaction::inspect(root, &state)?;
+            Ok(format!("INSPECTED {challenge} CONSISTENT"))
+        }
+        _ => transaction::apply(root, &state, &event),
     }
 }
 
@@ -228,7 +260,11 @@ fn main() -> ExitCode {
         }
         Err(msg) => {
             eprintln!("{msg}");
-            ExitCode::FAILURE
+            if msg.is::<transaction::IncompleteRecovery>() {
+                ExitCode::from(2)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }
