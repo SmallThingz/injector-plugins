@@ -131,13 +131,13 @@ public final class Txn {
             return "PREVIOUS";
         }
         Update update = readUpdate(readBytes(marker));
-        if (!update.boot.equals(boot) || !update.id.equals(updateId)) {
-            throw new IOException("Update identity or boot mismatch");
-        }
+        if (!update.boot.equals(boot)) throw new IOException("Update boot mismatch");
+        // A terminal rollback can also prove the pre-dispatch state for a fresh update ID.
         if (update.previous && Arrays.equals(update.legacy, journal)) {
             requireCurrent(io, update.before);
             return "PREVIOUS";
         }
+        if (!update.id.equals(updateId)) throw new IOException("Update identity mismatch");
         if (!update.previous && magic(journal) == TXN2) {
             Active active = readActive(journal);
             if (active.enabled && !active.reconciling && active.boot.equals(boot) && active.updateId.equals(updateId)

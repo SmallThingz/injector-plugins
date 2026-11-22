@@ -268,10 +268,25 @@ public final class TxnTest {
         expect(2, h.writes);
         sameBytes(legacy, Files.readAllBytes(h.dir.resolve(JOURNAL)));
         expect("PREVIOUS", h.inspect(BOOT, ID));
-        refused(() -> h.inspect(BOOT, "other-id"));
+        String fresh = "fresh-uuid";
+        byte[] previousMarker = Files.readAllBytes(h.dir.resolve(UPDATE));
+        expect("PREVIOUS", h.inspect(BOOT, fresh));
+        sameBytes(previousMarker, Files.readAllBytes(h.dir.resolve(UPDATE)));
+        h.values.get(SHOW).add("foreign.Changed");
+        refused(() -> h.inspect(BOOT, fresh));
+        h.values.put(SHOW, previous.get(1));
+        Files.write(h.dir.resolve(JOURNAL), new byte[]{0}, StandardOpenOption.APPEND);
+        refused(() -> h.inspect(BOOT, fresh));
+        Files.write(h.dir.resolve(JOURNAL), legacy);
         refused(() -> h.inspect(NEXT_BOOT, ID));
+        refused(() -> h.inspect(NEXT_BOOT, fresh));
         refused(h::configure);
         expect(2, h.writes);
+        expect("PREVIOUS", h.inspect(BOOT, fresh));
+        Txn.configure(h.dir, BOOT, fresh, DECLARED, h);
+        expect("APPLIED", h.inspect(BOOT, fresh));
+        refused(() -> h.inspect(BOOT, ID));
+        expect(4, h.writes);
 
         for (int position : Arrays.asList(1, 2)) {
             Host rejected = new Host(root, "rejected-" + position);
@@ -292,7 +307,7 @@ public final class TxnTest {
             expect(prior, rejected.pair());
             sameBytes(old, Files.readAllBytes(rejected.dir.resolve(JOURNAL)));
             expect("PREVIOUS", rejected.inspect(BOOT, ID));
-            refused(() -> rejected.inspect(BOOT, "other-id"));
+            expect("PREVIOUS", rejected.inspect(BOOT, "fresh-uuid"));
         }
 
         for (int position : Arrays.asList(1, 2, 3, 4)) {
@@ -314,9 +329,11 @@ public final class TxnTest {
             expect(writes, u.writes);
             byte[] marker = Files.readAllBytes(u.dir.resolve(UPDATE));
             refused(() -> u.inspect(BOOT, ID));
+            refused(() -> u.inspect(BOOT, "fresh-uuid"));
             u.values.put(HIDE, prior.get(0));
             u.values.put(SHOW, prior.get(1));
             refused(() -> u.inspect(BOOT, ID));
+            refused(() -> u.inspect(BOOT, "fresh-uuid"));
             refused(() -> Txn.requireEnabled(u.dir));
             refused(() -> u.enable(BOOT, DECLARED));
             refused(() -> u.disable(BOOT));
