@@ -30,14 +30,14 @@
     },
     {
       "name": "Caffeine",
-      "description": "Keep the screen awake across apps for 15 or 30 minutes.",
+      "description": "Keep the screen awake for 30 minutes, 1 hour, 5 hours or until stopped.",
       "icon": "plugin",
       "release": {
         "repository": "https://github.com/SmallThingz/injector-plugins",
-        "commit": "a1ee92c6159004c81159c599486d887c45e0e11f",
-        "tag": "plugins-20261122-controls-2",
+        "commit": "6b0bc39b8e57699b4876f35e49b391e425c2bd50",
+        "tag": "plugins-20261122-caffeine-presets-1",
         "asset": "caffeine.zip",
-        "sha256": "fe6011db53fcffac91c3a0cf4f75ce01d3c06030f944c8812f5f459afae4094d",
+        "sha256": "8f31fda019aa7c368c7ba57374518057cb5385584635752661f167be430d3676",
         "manifestPath": "plugins/caffeine/plugin.json"
       }
     }

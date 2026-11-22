@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/SmallThingz/injector-plugins",
+  "commit": "6b0bc39b8e57699b4876f35e49b391e425c2bd50",
+  "tag": "plugins-20261122-caffeine-presets-1",
+  "assets": {
+    "caffeine.zip": "8f31fda019aa7c368c7ba57374518057cb5385584635752661f167be430d3676"
+  }
+}

@@ -13,7 +13,9 @@ The failing MIUI floating-window plugin is excluded from the current catalog. It
 
 ## Release integrity
 
-The public plugin prerelease `plugins-20261122-controls-2` points to source commit `a1ee92c6159004c81159c599486d887c45e0e11f`. Its three ZIPs matched a clean rebuild from committed sources and were checked again after download. The default catalog pins Battery, CPU and Caffeine to this release. Battery ordinary replacement was verified on amethyst. The CPU governor results cover the isolated native hook. [Candidate release pins](releases/plugins-20261122-controls-2.json) · [Candidate catalog](https://raw.githubusercontent.com/SmallThingz/injector-plugins/8e99a55a6550c3107c5ac5532de62dceef1a7567/catalog.json).
+The public plugin prerelease `plugins-20261122-controls-2` points to source commit `a1ee92c6159004c81159c599486d887c45e0e11f`. Its three ZIPs matched a clean rebuild from committed sources and were checked again after download. The controls-2 catalog pinned Battery, CPU and Caffeine to this release. Battery ordinary replacement was verified on amethyst. The CPU governor results cover the isolated native hook. [Candidate release pins](releases/plugins-20261122-controls-2.json) · [Candidate catalog](https://raw.githubusercontent.com/SmallThingz/injector-plugins/8e99a55a6550c3107c5ac5532de62dceef1a7567/catalog.json).
+
+The prepared Caffeine 0.1.2 update offers 30 minutes, 1 hour, 5 hours and Unlimited. It retains the existing `indefinite` value. Quick Settings cycles through these presets in manifest order on an Injector version that supports all four. Battery and CPU retain their controls-2 release pins.
 
 Injector checks the resolved tag, source manifest and downloaded package before installation.
 
@@ -24,7 +26,9 @@ Requires Python 3 and Git. No plugin hook runs during packaging.
 ```sh
 git fetch origin tag plugins-20261122-controls-2
 python3 package-catalog.py packages --check
-python3 package-catalog.py verify --release releases/plugins-20261122-controls-2.json --require-tag
+python3 package-catalog.py verify --release releases/plugins-20261122-caffeine-presets-1.json \
+  --retain battery-charge-limit=releases/plugins-20261122-controls-2.json \
+  --retain cpu-control=releases/plugins-20261122-controls-2.json
 ```
 
 Packages use fixed member allowlists, ordering, timestamps and permissions. To publish changes: commit source and deterministic packages first, choose an unused release tag, create pins referencing that source commit, and generate the catalog with `package-catalog.py build`. Publish new assets, verify the remote tag target and every downloaded hash, then commit the catalog and release pins. Never move a published tag or replace its assets.
