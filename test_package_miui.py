@@ -25,7 +25,7 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         self.assertEqual(manifest["ui"]["layout"], "accordion")
         self.assertTrue(manifest["ui"]["presentation"]["description"].strip())
         self.assertEqual(manifest["liveUpdate"]["fromSha256"],
-                         "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337")
+                         "87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197")
         data, _ = pack.package(plugin)
         self.assertEqual(data, pack.package(plugin)[0])
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -49,7 +49,10 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(current)) as diagnostic, zipfile.ZipFile(io.BytesIO(data)) as event:
             self.assertEqual(set(diagnostic.namelist()), set(event.namelist()))
             changed = {name for name in event.namelist() if diagnostic.read(name) != event.read(name)}
-            self.assertEqual(changed, {"activity-lists.jar", "payload.sha256"})
+            self.assertEqual(changed, {"plugin.json", "activity-lists.jar", "payload.sha256"})
+            expected_manifest = json.loads(event.read("plugin.json"))
+            expected_manifest["liveUpdate"]["fromSha256"] = pack.sha256(data)
+            self.assertEqual(expected_manifest, json.loads(diagnostic.read("plugin.json")))
         with zipfile.ZipFile(io.BytesIO(previous)) as old, zipfile.ZipFile(io.BytesIO(data)) as new:
             self.assertEqual(set(old.namelist()), set(new.namelist()))
             members = {name: new.read(name) for name in new.namelist()}

@@ -12,7 +12,7 @@
     "run": "hook.sh"
   },
   "liveUpdate": {
-    "fromSha256": "8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337",
+    "fromSha256": "87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197",
     "inspect": "hook.sh"
   },
   "quickSettings": {
