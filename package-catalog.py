@@ -125,13 +125,21 @@ def validate_manifest(plugin, members):
         no_triggers = triggers == {} or (isinstance(triggers, dict) and set(triggers) == {"boot"} and triggers["boot"] is False)
         if manifest.get("session") is not None or not no_triggers:
             raise ValueError("Caffeine must not declare a session or automated triggers")
+        inputs = manifest.get("ui", {}).get("inputs", [])
+        behaviors = [item for item in inputs if item.get("id") == "screen_off_behavior"]
+        if behaviors:
+            if (len(behaviors) != 1 or behaviors[0].get("type") != "choice" or
+                    behaviors[0].get("default") != "turn_off" or
+                    [option.get("value") for option in behaviors[0].get("options", [])] != ["turn_off", "pause", "restart"]):
+                raise ValueError("Unsupported Caffeine screen-off choices/default")
         for event, path in hooks.items():
             action = document(members[path])
             expected = ({"action": "keep-screen-on", "operation": "release"} if event == "disable" else
                         {"action": "keep-screen-on", "operation": "acquire", "durationInput": "duration"})
+            if event != "disable" and behaviors:
+                expected["screenOffBehaviorInput"] = "screen_off_behavior"
             if action != expected:
                 raise ValueError("Invalid native descriptor for " + event)
-        inputs = manifest.get("ui", {}).get("inputs", [])
         duration = [item for item in inputs if item.get("id") == "duration"]
         if len(duration) != 1 or duration[0].get("type") != "choice":
             raise ValueError("Native durationInput must name one choice input")

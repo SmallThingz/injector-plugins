@@ -1,5 +1,6 @@
 {
   "action": "keep-screen-on",
   "operation": "acquire",
-  "durationInput": "duration"
+  "durationInput": "duration",
+  "screenOffBehaviorInput": "screen_off_behavior"
 }

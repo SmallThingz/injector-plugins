@@ -216,6 +216,20 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reviewed arm64 build"):
             pack.package("battery-charge-limit")
 
+    def test_screen_off_choice_must_match_acquire(self):
+        behavior = {"id": "screen_off_behavior", "type": "choice", "default": "turn_off",
+                    "options": [{"value": value} for value in ("turn_off", "pause", "restart")]}
+        self.change_manifest("caffeine", lambda m: m["ui"]["inputs"].append(behavior))
+        with self.assertRaisesRegex(ValueError, "descriptor"):
+            pack.package("caffeine")
+        self.write("plugins/caffeine/acquire.json", pack.encoded({
+            "action": "keep-screen-on", "operation": "acquire", "durationInput": "duration",
+            "screenOffBehaviorInput": "screen_off_behavior"}))
+        pack.package("caffeine")
+        self.change_manifest("caffeine", lambda m: m["ui"]["inputs"][1].update(default="restart"))
+        with self.assertRaisesRegex(ValueError, "screen-off"):
+            pack.package("caffeine")
+
     def test_native_descriptor_inputs_and_triggers_checked(self):
         original = (self.repo / "plugins/caffeine/plugin.json").read_bytes()
         changes = [

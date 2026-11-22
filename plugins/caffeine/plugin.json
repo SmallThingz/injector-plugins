@@ -1,10 +1,10 @@
 {
   "id": "caffeine",
   "name": "Caffeine",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": "SmallThingz",
   "homepage": "https://github.com/SmallThingz/Injector",
-  "description": "Keep the screen awake across apps. Locking ends the session.",
+  "description": "Keep the screen awake across apps.",
   "backend": "app",
   "runtime": "native",
   "hooks": {
@@ -48,6 +48,26 @@
           {
             "value": "indefinite",
             "label": "Unlimited"
+          }
+        ]
+      },
+      {
+        "id": "screen_off_behavior",
+        "label": "Screen off",
+        "type": "choice",
+        "default": "turn_off",
+        "options": [
+          {
+            "value": "turn_off",
+            "label": "Turn off"
+          },
+          {
+            "value": "pause",
+            "label": "Pause"
+          },
+          {
+            "value": "restart",
+            "label": "Restart"
           }
         ]
       }
