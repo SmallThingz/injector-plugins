@@ -134,6 +134,7 @@ def validate_manifest(plugin, members):
             reviewed_sources = ["8261ed1a1df0d164fa6f951041614156d4c50921d9534cb86ac9e82ea3b4b337"]
             if isinstance(manifest.get("triggers"), dict) and manifest["triggers"].get("packageChanges") is True:
                 reviewed_sources.append("87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197")
+                reviewed_sources.append("442b12aa80fa0c46b5d350cd7ea5a6f0e5713df92754e62918e7ef9104a9b1e4")
             if (not isinstance(update, dict) or set(update) != {"fromSha256", "inspect"}
                     or update["inspect"] != "hook.sh" or update["fromSha256"] not in reviewed_sources):
                 raise ValueError("Unexpected MIUI update source or inspection hook")

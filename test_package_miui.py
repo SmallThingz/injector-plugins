@@ -10,6 +10,7 @@ from unittest.mock import patch
 import zipfile
 ROOT = Path(__file__).resolve().parent
 FROZEN_ARTIFACT_COMMIT = "72ff6bd0a57b8b0cccee7feb0e63a431d4a0cdba"
+READBACK_COMMIT = "00d769800e6c15a67686a6c4de8c663d43e4ccb9"
 spec = importlib.util.spec_from_file_location("package_catalog", ROOT / "package-catalog.py")
 pack = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pack)
@@ -24,8 +25,13 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         self.assertEqual(manifest["version"], "0.1.0")
         self.assertEqual(manifest["ui"]["layout"], "accordion")
         self.assertTrue(manifest["ui"]["presentation"]["description"].strip())
-        self.assertEqual(manifest["liveUpdate"]["fromSha256"],
-                         "87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197")
+        readback = pack.committed_file(READBACK_COMMIT, pack.package_path(plugin))
+        self.assertEqual(manifest["liveUpdate"]["fromSha256"], pack.sha256(readback))
+        with zipfile.ZipFile(io.BytesIO(readback)) as prior:
+            previous = json.loads(prior.read("plugin.json"))
+            previous["liveUpdate"]["fromSha256"] = pack.sha256(readback)
+            self.assertEqual(previous, manifest)
+            self.assertEqual(prior.read("hook.sh"), members["hook.sh"])
         data, _ = pack.package(plugin)
         self.assertEqual(data, pack.package(plugin)[0])
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -45,7 +51,7 @@ class CurrentMiuiPackagingTests(unittest.TestCase):
         event_commit = "1fa871e327e2167d0017a0a40f0bfb275befd861"
         data = pack.committed_file(event_commit, pack.package_path(plugin))
         self.assertEqual(pack.sha256(data), "87979a98f29946e12a665f431ecffda28ea3ccfbb4ba766b01dba160f36cd197")
-        current, _ = pack.package(plugin)
+        current = pack.committed_file(READBACK_COMMIT, pack.package_path(plugin))
         with zipfile.ZipFile(io.BytesIO(current)) as diagnostic, zipfile.ZipFile(io.BytesIO(data)) as event:
             self.assertEqual(set(diagnostic.namelist()), set(event.namelist()))
             changed = {name for name in event.namelist() if diagnostic.read(name) != event.read(name)}

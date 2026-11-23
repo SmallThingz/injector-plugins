@@ -47,7 +47,7 @@ public final class InventoryTest {
         }, (user, packages) -> {
             calls[1]++;
             check(user == 17 && packages.size() == 3);
-            Inventory.verifyNames(reader("package:example.withoutactivities\npackage:example.two\n"
+            verifyNames(reader("package:example.withoutactivities\npackage:example.two\n"
                     + "package:example.one\n"), packages);
         });
         check(calls[0] == 1 && calls[1] == 1);
@@ -57,14 +57,14 @@ public final class InventoryTest {
 
         reject(() -> Inventory.classes(-2, (u, f, c) -> fail(), (u, p) -> fail()));
         reject(() -> Inventory.classes(17, (u, f, c) -> c.addPackage("example.one"),
-                (u, p) -> Inventory.verifyNames(reader("package:example.one\npackage:example.two\n"), p)));
-        reject(() -> Inventory.verifyNames(reader("package:example.one\n"),
+                (u, p) -> verifyNames(reader("package:example.one\npackage:example.two\n"), p)));
+        reject(() -> verifyNames(reader("package:example.one\n"),
                 packages("example.one", "example.two")));
-        reject(() -> Inventory.verifyNames(reader("package:example.one"), packages("example.one")));
-        reject(() -> Inventory.verifyNames(reader("package:example.one\npackage:example.one\n"),
+        reject(() -> verifyNames(reader("package:example.one"), packages("example.one")));
+        reject(() -> verifyNames(reader("package:example.one\npackage:example.one\n"),
                 packages("example.one", "example.two")));
-        reject(() -> Inventory.verifyNames(reader("Unexpected shell warning\n"), packages("example.one")));
-        reject(() -> Inventory.verifyNames(reader(new String(new char[1025])), packages("example.one")));
+        reject(() -> verifyNames(reader("Unexpected shell warning\n"), packages("example.one")));
+        reject(() -> verifyNames(reader(new String(new char[1025])), packages("example.one")));
 
         Inventory.Collector inventory = new Inventory.Collector();
         inventory.addPackage("example.one");
@@ -77,7 +77,42 @@ public final class InventoryTest {
                 inventory.addActivity("example.one", "example.one", "." + largeSuffix + i, null);
             }
         });
-        System.out.println("Inventory component, user, deduplication, completeness and bounds checks passed");
+        burstRetries();
+        System.out.println("Inventory component, user, deduplication, completeness, bounds and burst checks passed");
+    }
+
+    private static void burstRetries() throws Exception {
+        int[] scans = {0};
+        Inventory.PackageSource advancing = (user, flags, collector) -> {
+            String pkg = "fixture.p" + ++scans[0];
+            collector.addPackage(pkg);
+            collector.addActivity(pkg, pkg, ".Main", null);
+        };
+        // First two scans have valid but different metadata and shell sets of equal size.
+        List<String> stable = Inventory.classes(0, advancing,
+                (u, packages) -> verifyNames(reader("package:fixture.p3\n"), packages));
+        check(scans[0] == 3 && stable.equals(Arrays.asList("fixture.p3.Main")));
+
+        scans[0] = 0;
+        reject(() -> Inventory.classes(0, advancing,
+                (u, packages) -> verifyNames(reader("package:fixture.other\n"), packages)));
+        check(scans[0] == 3);
+        for (String invalid : Arrays.asList("warning\n", "package:foo bar\n",
+                "package:fixture.p1\npackage:fixture.p1\n", "package:fixture.p1")) {
+            scans[0] = 0;
+            reject(() -> Inventory.classes(0, advancing,
+                    (u, packages) -> verifyNames(reader(invalid), packages)));
+            check(scans[0] == 1);
+        }
+        scans[0] = 0;
+        reject(() -> Inventory.classes(0, advancing, (u, packages) -> {
+            throw new IOException("lookup failed");
+        }));
+        check(scans[0] == 1);
+    }
+
+    private static void verifyNames(BufferedReader rows, Set<String> metadata) throws IOException {
+        Inventory.verifyNames(Inventory.readNames(rows), metadata);
     }
 
     private static boolean has(long flags, int bit) {

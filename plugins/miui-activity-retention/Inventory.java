@@ -14,6 +14,7 @@ import java.util.TreeSet;
 
 /** Declared activity components for one Android user from PackageManager metadata. */
 public final class Inventory {
+    private static final int MAX_SCANS = 3;
     static final long FLAGS = PackageManager.GET_ACTIVITIES
             | PackageManager.MATCH_DISABLED_COMPONENTS
             | PackageManager.MATCH_DISABLED_UNTIL_USED_COMPONENTS
@@ -26,6 +27,13 @@ public final class Inventory {
 
     interface Verifier {
         void verify(int user, Set<String> packages) throws Exception;
+    }
+
+    private static final class PackageSetMismatch extends IOException {
+        PackageSetMismatch(int metadataCount, int streamedCount) {
+            super("Installed package sets differ: " + metadataCount + " metadata and "
+                    + streamedCount + " streamed names");
+        }
     }
 
     private Inventory() {}
@@ -45,10 +53,18 @@ public final class Inventory {
 
     static List<String> classes(int user, PackageSource source, Verifier verifier) throws Exception {
         requireUser(user);
-        Collector collector = new Collector();
-        source.read(user, FLAGS, collector);
-        verifier.verify(user, collector.packages);
-        return new ArrayList<>(collector.names);
+        for (int attempt = 1; ; attempt++) {
+            Collector collector = new Collector();
+            source.read(user, FLAGS, collector);
+            try {
+                verifier.verify(user, collector.packages);
+                return new ArrayList<>(collector.names);
+            } catch (PackageSetMismatch changed) {
+                if (attempt >= MAX_SCANS) throw changed;
+                System.err.println("MIUI inventory package sets differ; rescanning (" + (attempt + 1)
+                        + "/" + MAX_SCANS + ")");
+            }
+        }
     }
 
     private static void requireUser(int user) throws IOException {
@@ -81,14 +97,15 @@ public final class Inventory {
         }
     }
 
-    private static void verifyInstalledNames(int user, Set<String> remaining) throws Exception {
+    private static void verifyInstalledNames(int user, Set<String> metadata) throws Exception {
         // The package shell command lists names inside system_server and streams its output.
         // This independently verifies the potentially sliced IPackageManager reply.
         Process child = installedNamesCommand(user).start();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 child.getInputStream(), StandardCharsets.UTF_8))) {
-            verifyNames(reader, remaining);
+            Set<String> observed = readNames(reader);
             if (child.waitFor() != 0) throw new IOException("Installed package name lookup failed");
+            verifyNames(observed, metadata);
         } finally {
             child.destroy();
         }
@@ -99,21 +116,20 @@ public final class Inventory {
                 "--user", Integer.toString(user)).redirectErrorStream(true);
     }
 
-    static void verifyNames(BufferedReader reader, Set<String> remaining) throws IOException {
-        int expected = remaining.size();
-        int matched = 0;
+    static Set<String> readNames(BufferedReader reader) throws IOException {
+        Set<String> observed = new HashSet<>();
         String line;
         while ((line = packageLine(reader)) != null) {
-            if (!line.startsWith("package:") || !remaining.remove(line.substring("package:".length()))) {
-                throw new IOException("Installed package inventories differ after " + matched
-                        + " matches out of " + expected + " metadata packages");
-            }
-            matched++;
+            if (!line.startsWith("package:")) throw new IOException("Invalid installed package record");
+            String name = line.substring("package:".length());
+            if (!validQualifiedName(name) || !observed.add(name))
+                throw new IOException("Invalid or repeated installed package name");
         }
-        if (!remaining.isEmpty()) {
-            throw new IOException("Installed package name inventory incomplete: " + matched
-                    + " names for " + expected + " metadata packages");
-        }
+        return observed;
+    }
+
+    static void verifyNames(Set<String> observed, Set<String> metadata) throws IOException {
+        if (!observed.equals(metadata)) throw new PackageSetMismatch(metadata.size(), observed.size());
     }
 
     private static String packageLine(BufferedReader reader) throws IOException {
