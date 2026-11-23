@@ -88,7 +88,7 @@ mkdir -p ../../.tmp
 out=$(mktemp -d ../../.tmp/miui-readonly.XXXXXXXX)
 mkdir "$out/classes" "$out/dex"
 javac --release 8 -cp "$platform" -d "$out/classes" \
-    ActivityLists.java Inventory.java PackageChanges.java ParcelCapacity.java Txn.java
+    ActivityLists.java Inventory.java InventoryDeferred.java PackageChanges.java ParcelCapacity.java Txn.java
 "$sdk/build-tools/36.0.0/d8" --min-api 29 --lib "$platform" --output "$out/dex" "$out/classes/"*.class
 python3 - "$out" <<'PY'
 from pathlib import Path
@@ -113,3 +113,13 @@ The reviewed package-change installation can hand off its settled controller to 
 For a same-boot enabled TXN2 journal, the candidate verifies the committed migration identity when present and compares two full ordered live getter pairs against the active image. Initial inspection returns `PREVIOUS <token>`. Configure repeats the check and atomically records the boot, generation, token and SHA-256 of both journal files in `activity-code-update.receipt`. It performs zero setters and skips inventory. A matching subsequent inspection returns `APPLIED <token>` only after verifying the live state again. An identical Configure leaves the receipt untouched. The host can settle a lost response by inspection.
 
 Pending or inactive state, drift, an invalid receipt or conflicting identities prevent confirmation. A later staged generation needs a fresh token. TXN1 retains its original migration protocol. Normal Enable, Disable, boot and interval use the existing transaction and readback logic.
+
+### Automatic interval inventory deferral
+
+The host can pass a fresh canonical lowercase UUID in `INJECTOR_REFRESH_CHALLENGE` on its automatic interval worker for this plugin. The package-change job also invokes the interval worker. After three completed scans with valid but differing package sets, the inventory callback checks the current Android user before and after a same-boot ACTIVE inspection under FD9. Only that callback can emit the following terminal line and exit 75.
+
+```text
+MIUI_INVENTORY_DEFERRED <challenge> <installation-uuid> <boot-uuid> <active-journal-sha256>
+```
+
+The callback exits before the transaction prepares a controller write or the worker advances the change cursor. The installation UUID comes from the staged plugin directory. An eligible host records a deferred, unsuccessful refresh and schedules a new job with a fresh request key. Receipt matching requires this reviewed package, a completed exit 75 and its unique terminal marker with the issued challenge, generation and boot. A timeout, missing proof or ordinary nonzero exit retains the original ambiguous-failure treatment. The next job takes a new package inventory.

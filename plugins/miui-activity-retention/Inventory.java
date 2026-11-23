@@ -29,8 +29,10 @@ public final class Inventory {
         void verify(int user, Set<String> packages) throws Exception;
     }
 
-    private static final class PackageSetMismatch extends IOException {
-        PackageSetMismatch(int metadataCount, int streamedCount) {
+    static final class PackageSetMismatch extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        private PackageSetMismatch(int metadataCount, int streamedCount) {
             super("Installed package sets differ: " + metadataCount + " metadata and "
                     + streamedCount + " streamed names");
         }

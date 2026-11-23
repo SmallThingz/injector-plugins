@@ -145,7 +145,9 @@ public final class ActivityLists implements Txn.IO {
         Txn.InventorySource inventory = () -> {
             if (!inspecting) stage("inventory started");
             if (!interval) changes.observe();
-            List<String> names = Inventory.classes(inventoryUser);
+            List<String> names = InventoryDeferred.read(() -> Inventory.classes(inventoryUser), event,
+                    System.getenv("INJECTOR_REFRESH_CHALLENGE"), System.getenv("INJECTOR_PLUGIN_DIR"),
+                    state, boot, this, inventoryUser, Inventory::currentUser);
             if (names.isEmpty()) throw new IOException("Empty current-user activity inventory");
             checkUser();
             if (!inspecting) stage("inventory complete entries=" + names.size());
@@ -184,6 +186,9 @@ public final class ActivityLists implements Txn.IO {
     public static void main(String[] args) {
         try {
             run(args);
+        } catch (InventoryDeferred deferred) {
+            System.out.println(deferred.getMessage());
+            System.exit(InventoryDeferred.EXIT_CODE);
         } catch (Exception failure) {
             reportFailure(failure);
             System.exit(1);

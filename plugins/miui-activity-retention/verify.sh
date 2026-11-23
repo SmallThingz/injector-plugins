@@ -19,6 +19,7 @@ java -cp "$classpath" ParcelCapacityTest
 java -cp "$classpath" PackageChangesTest "$work/cursor"
 mkdir "$work/journal"
 java -cp "$classpath" TxnTest "$work/journal"
+java -cp "$classpath" InventoryDeferredTest "$work/journal"
 java -cp "$classpath" BridgeDisableTest "$work/journal"
 INJECTOR_PLUGIN_DIR=/stage/138e0000-ada1-4a14-a534-000000000001 java -cp "$classpath" CodeUpdateTest "$work/journal"
 bash tests/inspection-lock.sh "$work/lock-test"
